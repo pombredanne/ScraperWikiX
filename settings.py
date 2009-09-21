@@ -1,5 +1,6 @@
 
 from os.path import exists
+
 # Django settings for scraperwiki project.
 
 DEBUG = True
@@ -31,6 +32,7 @@ except NameError:
 environment, then you need to copy localsettings.py.example to localsettings.py and edit it for your personal settings.
 If this message is displayed in a production environment, then it has not been set up correctly."""
     exit
+
 TIME_ZONE = 'London/England'
 LANGUAGE_CODE = 'en-uk'
 
@@ -71,6 +73,7 @@ MIDDLEWARE_CLASSES = (
 )
 
 ROOT_URLCONF = 'urls'
+
 
 TEMPLATE_DIRS = (
     SCRAPERWIKI_DIR + 'templates',
