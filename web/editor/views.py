@@ -6,7 +6,7 @@ import forms
 from scraper.models import Scraper as ScraperModel
 from scraper import template
 
-def edit(request, scraper_id=None):
+def edit(request, short_name=None):
   """
   This is the main editor view.
   
@@ -24,42 +24,44 @@ def edit(request, scraper_id=None):
   
   """
   
-  if scraper_id:
-    scraper = get_object_or_404(ScraperModel, pk=int(scraper_id))
+  if short_name:
+    scraper = get_object_or_404(ScraperModel, short_name=short_name)
   else:
     scraper = ScraperModel(title=template.default()['title'])
     
-
+  message = ""
   
   if request.method == 'POST':
     form = forms.editorForm(request.POST)
-    action = request.POST.get('action')
-    if action == "Commit":
+    action = request.POST.get('action').lower()
+    if action == "commit":
       # Commit...
       message = "Scraper Comitted"
-    elif action == "Save":
-      scraperForm = form.save(commit=False)
-      scraperForm.code = request.POST['code']
-      scraperForm.pk = scraper_id
-      scraperForm.created_at = scraper.created_at
-      scraperForm.save()
-      message = "Scraper Saved"
-      return HttpResponseRedirect(reverse('editor', kwargs={'scraper_id' : scraperForm.pk}))
+    elif action == "save":
+      if form.is_valid():      
+        scraperForm = form.save(commit=False)
+        scraperForm.code = request.POST['code']
+        scraperForm.short_name = scraper.short_name
+        scraperForm.created_at = scraper.created_at
+        scraperForm.save()
+        message = "Scraper Saved"
+        return HttpResponseRedirect(reverse('editor', kwargs={'short_name' : scraperForm.short_name}))
       
-    elif action == "Run":
+    elif action == "run":
       # Run...
-      message = "Scraper Run"
+      # This shouldn't happen, as 'run' should be caught by javascript in the editor
+      message = "You need JavaScript to run script in the browser."
     else:
       message = ""
   else:
     
     form = forms.editorForm(instance=scraper)
-    if scraper_id:
-      form.fields['code'].initial = scraper.current_code()
+    if short_name:
+      form.fields['code'].initial = "scraper.current_code()"
     else:
       form = forms.editorForm(template.default())
 
-  return render_to_response('editor.html', {'scraper':scraper, 'form':form}, context_instance=RequestContext(request)) 
+  return render_to_response('editor.html', {'scraper':scraper, 'form':form, 'message' : message}, context_instance=RequestContext(request)) 
   
   
   

@@ -30,7 +30,7 @@ def frontpage(request):
         my_scrapers = []
         following_scrapers = []
         contribution_scrapers = []
-			
+
     contribution_count = len(contribution_scrapers)
     good_contribution_scrapers = []
     # add filtering to cut this down to the most recent 10 items
@@ -39,15 +39,12 @@ def frontpage(request):
         if scraper.is_good():
             good_contribution_scrapers.append(scraper)
 
-    new_scrapers = Scraper.objects.all()
+    new_scrapers = Scraper.objects.all().order_by('-created_at')[:5]
     return render_to_response('frontend/frontpage.html', {'my_scrapers': my_scrapers, 'following_scrapers': following_scrapers, 'new_scrapers': new_scrapers, 'contribution_count': contribution_count}, context_instance = RequestContext(request))
 
 def process_logout(request):
     logout(request)
     return HttpResponseRedirect(reverse('frontpage'))
-
-def not_implemented_yet(request):
-    return render_to_response('frontend/not-implemented-yet.html', {}, context_instance = RequestContext(request))	
     
 def login(request):
     if request.method == 'POST':
