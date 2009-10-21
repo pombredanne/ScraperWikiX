@@ -41,6 +41,7 @@ USE_I18N = True
 
 
 MEDIA_DIR = SCRAPERWIKI_DIR + 'media'
+MEDIA_URL = '/media/'
 MEDIA_ADMIN_DIR = SCRAPERWIKI_DIR + 'media-admin'
 
 # URL that handles the media served from MEDIA_ROOT. Make sure to use a trailing slash.
@@ -86,10 +87,11 @@ INSTALLED_APPS = (
     'south',
     'profiles',
     'frontend',
-	'scraper',
-	'notification',
-	'page_cache',
-	'contact_form',
+  	'scraper',
+  	'notification',
+  	'page_cache',
+  	'editor',
+  	'contact_form'
 )
 
 
