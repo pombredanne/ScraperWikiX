@@ -1,0 +1,110 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN">
+<html lang="en">
+	<head>
+	    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
+		<script type="text/javascript" src="/media/js/jquery-1.3.2.js"></script>	    
+		<script type="text/javascript" src="/media/js/jquery-ui-1.7.2.custom.min.js"></script>
+		<script type="text/javascript" src="/media/CodeMirror-0.63/js/codemirror.js"></script>
+		<script type="text/javascript" src="/media/js/scraperwiki.js"></script>		
+	    <link rel="stylesheet" type="text/css" href="/media/css/main.css" />
+	    <link rel="stylesheet" type="text/css" href="/media/css/jquery-ui-1.7.2.custom.css" />
+	    {% block css %}{% endblock %}
+	    <title>Scraperwiki : {% block title %}{% endblock %}</title>
+	</head>
+	<body>
+	    <div class="banner">
+	        We want to make ScraperWiki elegant, useful and fun. Please let us know what you think, good or bad. <a href="#">Send feedback</a>.
+	    </div>
+		<div id="divPage">
+		    <div id="divHeader">
+                    
+                    <div id="divLogo">
+    					<p><a href='{% url frontpage %}'>ScraperWiki</a></p>
+    					<p>bootstrap the web</p>
+    				</div>
+				
+    			<div id="divMenu">
+    			    <ul>
+    				    <li><a href="#">Create a scraper</a></li>
+    				    <li>
+    				        <a href="{% url scraper_list %}">Browse Scrapers &amp; Data</a>
+    				    </li>
+    				    <li><a href="#">Reuse the data</a></li>
+    				    <li class="helplink"><a href="/help/">Help</a></li>
+    				</ul>
+    				<ul>
+    					{% if user.is_authenticated %}
+    					  <li>signed in as <a href="{% url profiles_profile_detail user.username %}">{{user.username}}</a></li>
+    					  <li>{{ user.scraper_set.owned_count }}
+    					     {% ifnotequal user.scraper_set.owned_count 1 %}
+    					        scrapers
+    					     {% else %}
+    					        scraper
+    					     {% endifnotequal %}
+    					     {% ifnotequal user.scraper_set.owned_count 0 %}
+    					        ({{user.scraper_set.owned_good_count}}) OK
+    					     {% endifnotequal %}
+    					 </li>
+    					 <li><a href='/logout?next_page=/'>sign out</a></li>
+    					{% else %}
+    						<li><a href='/login?next=/'>Sign in or create an account</a></li>
+    					{% endif %}
+    				</ul>
+    			</div>
+		    </div>
+			{% block content %}{% endblock %}
+		</div>			
+		{% block footer %}
+			<div id="divFooter">
+		       <dl>
+		           <dt>About</dt>
+		           <dd>
+		             <ul>
+		                 <li><a href="/about/">About ScraperWiki</a></li>
+		                 <li><a href="http://blog.scraperwiki.com">Blog</a></li>
+		             </ul>
+		            </dd>
+		           <dt>Scrapers</dt>
+		           <dd>
+		             <ul>
+		                 <li><a href="{% url scraper_list %}">Browse scrapers &amp; data</a></li>
+		             </ul>
+		           </dd>
+		           <dt>Reuse the data</dt>
+		           <dd>
+		             <ul>
+		                 <li><a href="#">API</a></li>
+		                 <li><a href="#">Code libraries</a></li>			                 
+		             </ul>
+		            </dd>
+		           <dt>Help &amp; support</dt>
+		           <dd>
+		             <ul>
+			                 <li><a href="mailto:team@scraperwiki.com">Contact us</a></li>
+			                 <li><a href="/help/">Help &amp; FAQs</a></li>			                 
+			                 <li><a href="http://groups.google.com/group/scraperwiki">Developers discussion group</a></li>			                   			                 
+			             </ul>
+		           </dd>
+		       </dl>
+				<div id="divFooterCopyright">
+				    <p>
+				        <a href="http://www.4ip.org.uk">
+					        <img src="/media/images/4ip.png" title="4iP Logo" alt="4iP"/>
+					    </a>
+					</p>
+					<p>
+					    &copy; Scraper Wiki Ltd&nbsp;<a href="/terms_and_conditions/">Terms &amp; Conditions</a>
+					</p>
+				</div>
+				<br class="clear"/>
+			</div>
+		{% endblock %}
+		<div class='popup-area'>
+			
+		</div>
+		
+	    <script type="text/javascript" defer="defer">
+	        {% block run_script %}{% endblock %}
+        </script>
+	</body>
+</html>

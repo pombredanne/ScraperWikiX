@@ -1,0 +1,19 @@
+{% extends "frontend/base.html" %}
+{% block css %}{% endblock %}
+
+{% block title %}Profile Creation{% endblock %}
+{% block content %}
+
+	{% include 'shared/form_errors.html' %}
+
+	<form method="post" action="{% url profiles_create_profile %}">
+	    {{ form.bio.label_tag }}
+	    {{ form.bio }}
+	    
+	    {{ form.alert_frequency.label_tag }}
+	    {{ form.alert_frequency }} in seconds.
+		<input type="hidden" name="success_url" value="/" />
+		<input type="submit" value="Save" />
+	</form>
+
+{% endblock %}
