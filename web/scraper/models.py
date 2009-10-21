@@ -2,10 +2,14 @@ from django.db import models
 from django.contrib.auth.models import User
 
 from managers import datastore
-
+from django.db.models.signals import post_save
 from page_cache.models import *
+import template
+import util
+import vc
 
 from django.core.mail import send_mail
+
 
 # models defining scrapers and their metadata.
 
@@ -99,14 +103,25 @@ class Scraper(models.Model):
     description       = models.TextField()
     license           = models.CharField(max_length = 100)
     created_at        = models.DateTimeField(auto_now_add = True)
-    published_version = models.IntegerField()
     disabled          = models.BooleanField()
     deleted           = models.BooleanField()
     status            = models.CharField(max_length = 10)
     users             = models.ManyToManyField(User, through='UserScraperRole')
 
     objects = ScraperManager()
-
+    
+    def __unicode__(self):
+      return self.short_name
+    
+    def save(self):
+        if self.short_name:
+          self.short_name = util.SlugifyUniquely(self.short_name, Scraper, slugfield='short_name')
+        else:
+          self.short_name = util.SlugifyUniquely(self.title, Scraper, slugfield='short_name')
+          
+        super(Scraper, self).save()
+    
+    
     def language(self):
 	    return "Python"
 	
@@ -125,19 +140,19 @@ class Scraper(models.Model):
 	# currently, the only editor we have is the owner of the scraper.
     def editors(self):
         return (self.owner(),)
-
+            
     def current_code(self):
-	    return """
-# Scraper Code.
-# Currently this is dummy data, as there is no storage of the code yet
-	
-print "Hello World"
-               """
+        code =  vc.get_code(self.short_name)
+        return code
 
     def is_good(self):
         # don't know how goodness is going to be defined yet.
         return True
 		
+def post_save_signal(sender, **kwargs):
+  vc.commit(kwargs['instance'])
+post_save.connect(post_save_signal, sender=Scraper)
+
 
 class ScraperVersion(models.Model):
     """
