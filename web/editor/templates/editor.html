@@ -18,12 +18,13 @@
 
 {% block content %}
   
-
-<form action="" method="POST" accept-charset="utf-8">
+Short name: {{ scraper.short_name }}
+<h3>{{ message }}</h3>
+<form action="" method="POST" accept-charset="utf-8" target="">
   {{ form.as_p }}
   <p><input type="submit" name="action" value="Commit">
   <input type="submit" name="action" value="Save">
   <input type="submit" name="action" value="Run"></p>
 </form>
-
+<iframe name="console"></iframe>
 {% endblock %}
