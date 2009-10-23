@@ -41,6 +41,7 @@ USE_I18N = True
 
 
 MEDIA_DIR = SCRAPERWIKI_DIR + 'media'
+MEDIA_URL = '/media/'
 MEDIA_ADMIN_DIR = SCRAPERWIKI_DIR + 'media-admin'
 
 # URL that handles the media served from MEDIA_ROOT. Make sure to use a trailing slash.
@@ -64,6 +65,7 @@ MIDDLEWARE_CLASSES = (
     'django.middleware.common.CommonMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    # 'debug_toolbar.middleware.DebugToolbarMiddleware',
 )
 
 ROOT_URLCONF = 'urls'
@@ -86,10 +88,12 @@ INSTALLED_APPS = (
     'south',
     'profiles',
     'frontend',
-	'scraper',
-	'notification',
-	'page_cache',
-	'contact_form',
+  	'scraper',
+  	'notification',
+  	'page_cache',
+  	'editor',
+  	'contact_form',
+    #'debug_toolbar'
 )
 
 
@@ -104,3 +108,9 @@ AUTH_PROFILE_MODULE = 'frontend.UserProfile'
 
 # Cal Henderson - youtube presentation on Django
 # rsvg-convert 
+
+INTERNAL_IPS = ('127.0.0.1',)
+
+DEBUG_TOOLBAR_CONFIG = {
+  'INTERCEPT_REDIRECTS' : False
+}
