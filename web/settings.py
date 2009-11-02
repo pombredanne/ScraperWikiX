@@ -17,8 +17,6 @@ ADMINS = (
 
 MANAGERS = ADMINS
 
-# ALTER DATABASE scraperwiki CHARACTER SET=utf8;
-
 try:
   from localsettings import * 
 except:
@@ -65,6 +63,7 @@ MIDDLEWARE_CLASSES = (
     'django.middleware.common.CommonMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'django_notify.middleware.NotificationsMiddleware',
     # 'debug_toolbar.middleware.DebugToolbarMiddleware',
 )
 
@@ -75,6 +74,15 @@ TEMPLATE_DIRS = (
     # Put strings here, like "/home/html/django_templates" or "C:/www/django/templates".
     # Always use forward slashes, even on Windows.
     # Don't forget to use absolute paths, not relative paths.
+)
+
+TEMPLATE_CONTEXT_PROCESSORS = (
+  'django.core.context_processors.auth',
+  'django.core.context_processors.debug',
+  'django.core.context_processors.i18n',
+  'django.core.context_processors.media',
+  'django.core.context_processors.request',
+  'django_notify.context_processors.notifications',
 )
 
 INSTALLED_APPS = (
@@ -93,15 +101,12 @@ INSTALLED_APPS = (
   	'page_cache',
   	'editor',
   	'contact_form',
-    #'debug_toolbar'
+  	'django_notify',
+    'debug_toolbar'
 )
 
 
 ACCOUNT_ACTIVATION_DAYS = 14
-
-#    'codewiki',
-# removed from installed apps so as to exclude them from the admin interface.
-#    'blog',
 
 # tell Django that the frontent user_profile model is to be attached to the user model in the admin side.
 AUTH_PROFILE_MODULE = 'frontend.UserProfile'
@@ -115,4 +120,31 @@ DEBUG_TOOLBAR_CONFIG = {
   'INTERCEPT_REDIRECTS' : False
 }
 
+
+NOTIFICATIONS_STORAGE = 'session.SessionStorage'
 REGISTRATION_BACKEND = "registration.backends.default.DefaultBackend"
+
+
+
+# Define how scraper code should be run.
+# There are 3 available settings:
+# 
+# 1. firestarter_apache
+# 2. firestarter_django
+# 3. popen
+# 
+# The first option is prefered as it allows running code securly,
+# streaming output and killing processes.
+# 
+# The second option will work in most cases, but will not stream code.
+# 
+# The third option will only work is settings.DEBUG is true as it
+# allows code to run as the apache user on the server without 
+# any control.
+
+CODE_RUNNING_MODE = 'firestarter_django'
+
+
+
+
+
