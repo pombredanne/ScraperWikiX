@@ -100,7 +100,12 @@ INSTALLED_APPS = (
   	'page_cache',
   	'editor',
   	'contact_form',
+<<<<<<< local
+  	'market',  	
+    #'debug_toolbar'
+=======
   	'django_notify',
+>>>>>>> other
 )
 
 
