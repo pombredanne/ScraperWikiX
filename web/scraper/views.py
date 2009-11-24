@@ -9,8 +9,6 @@ from tagging.models import Tag
 from scraper import models
 from scraper import forms
 
-from settings import CODEMIRROR_URL
-
 def create(request):
     if request.method == 'POST':
         return render_to_response('scraper/create.html', {}, context_instance=RequestContext(request)) 
@@ -23,7 +21,7 @@ def data (request, scraper_short_name):
     data = models.Scraper.objects.data_summary(scraper_id=scraper.guid)
     user_owns_it = (scraper.owner() == user)
     user_follows_it = (user in scraper.followers())
-    dummy_row_count = range(10) # django templates don't do 'for $n' loops, see http://code.djangoproject.com/ticket/5172
+    dummy_row_count = [1,2,3,4,5,6,7,8,9,10] # django templates don't do 'for $n' loops, so this is a hack
 
     scraper_tags = Tag.objects.get_for_object(scraper)
     
@@ -52,8 +50,7 @@ def code (request, scraper_short_name):
         'selected_tab': 'code', 
         'scraper': scraper, 
         'user_owns_it': user_owns_it, 
-        'user_follows_it': user_follows_it, 
-        'CODEMIRROR_URL' : CODEMIRROR_URL
+        'user_follows_it': user_follows_it
         }, context_instance=RequestContext(request))
 
 def contributors (request, scraper_short_name):
@@ -82,7 +79,6 @@ def contributors (request, scraper_short_name):
 
 
 def show(request, scraper_short_name, selected_tab = 'data'):
-    
     user = request.user
     scraper = get_object_or_404(models.Scraper.objects, short_name=scraper_short_name)
     you_own_it = (scraper.owner() == user)
