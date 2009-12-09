@@ -12,7 +12,6 @@ from registration.signals import user_registered
 
 import tagging
 
-from page_cache.models import *
 import template
 import util
 import vc
@@ -48,7 +47,7 @@ class Scraper(models.Model):
 		user.scraper_set.watching()
 
     """
-    title             = models.CharField(max_length = 100, null=False, blank=False, verbose_name='Scraper Title')
+    title             = models.CharField(max_length = 100, null=False, blank=False, verbose_name='Scraper Title', default='Untitled Scraper')
     short_name        = models.CharField(max_length = 50)
     source            = models.CharField(max_length = 100, blank=True)
     last_run          = models.DateTimeField(blank = True, null=True)
@@ -62,7 +61,7 @@ class Scraper(models.Model):
     users             = models.ManyToManyField(User, through='UserScraperRole')
     guid              = models.CharField(max_length = 1000)
     published         = models.BooleanField(default=False)
-    
+    first_published_at   = models.DateTimeField(null=True)
     objects = managers.scraper.ScraperManager()
       
     def __unicode__(self):
@@ -91,8 +90,10 @@ class Scraper(models.Model):
       if self.__dict__.get('code'):
           vc.save(self)
           if commit:
-            # Publish the scraper
+            # Publish the scraper & set it's publish date
             self.published = True
+            if self.first_published_at == None:
+                self.first_published_at = datetime.datetime.today()
             vc.commit(self, message=message, user=user)
       super(Scraper, self).save()
     
@@ -164,6 +165,10 @@ class Scraper(models.Model):
     def number_of_lines(self):
         code = vc.get_code(self.short_name)
         return code.count("\n")
+        
+    def get_absolute_url(self):
+        # used by RSS feeds - TODO
+        return "/scrapers/%i/" % self.short_name
 
     def is_good(self):
         # don't know how goodness is going to be defined yet.
@@ -189,41 +194,3 @@ class UserScraperRole(models.Model):
     
     def __unicode__(self):
       return "Scraper_id: %s -> User: %s (%s)" % (self.scraper, self.user, self.role)
-
-    
-class ScraperRequest(models.Model):
-    """
-       We wish to allow the users to put in their requests for what data to scrape next.
-    """
-
-    description = models.TextField()
-    source_link = models.CharField(max_length = 250)
-    created_at  = models.DateTimeField(auto_now_add = True)
-
-    def send_notice_email(self):
-        send_mail(self.email_subject(), self.email_body(), self.from_address(), self.recipient_list(), fail_silently=True)
-        
-    def email_subject(self):
-        return "Scraper Request"
-        
-    def email_body(self):
-        return """
-    Dear Scraperwiki Developers,
-    
-       A scraper has been requested.
-       
-       The description is as follows :-
-       
-       %s
-       
-       From the source
-       
-       %s
-        """ % (self.description, self.source_link)
-        
-    def from_address(self):
-        return 'no-reply@scraperwiki.org'
-        
-    def recipient_list(self):
-        # XYZZY PRM 2009/10/13 - We should really move this into settings.
-        return ('team@scraperwiki',)

@@ -1,8 +1,4 @@
-from django.forms import ModelForm, ChoiceField
+from django import forms
 
-from scraper.models import ScraperRequest
-
-class ScraperRequestForm (ModelForm):
-    class Meta:
-        model = ScraperRequest
-        fields = ('description', 'source_link',)
+class SearchForm(forms.Form):
+    q = forms.CharField(label='Search scrapers', max_length=50)

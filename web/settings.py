@@ -89,14 +89,15 @@ INSTALLED_APPS = (
     'frontend',
   	'scraper',
   	'notification',
-  	'page_cache',
   	'editor',
   	'contact_form',
-  	'market',  	
+  	'payment',  	
+  	'market',
     #'debug_toolbar',
   	'django_notify',
   	'tagging',
   	'django.contrib.humanize',
+  	'paypal.standard.ipn',
 )
 
 
@@ -123,5 +124,14 @@ REGISTRATION_BACKEND = "registration.backends.default.DefaultBackend"
 SCRAPER_LIBS_DIR = join(HOME_DIR, "scraperlibs")
 CODEMIRROR_URL = MEDIA_URL + "CodeMirror-0.64/"
 
-#send broken link emails
+# send broken link emails
 SEND_BROKEN_LINK_EMAILS = DEBUG == False
+
+# number of scrapers to show per page on /scrapers/list/
+SCRAPERS_PER_PAGE = 10
+
+#paypal
+PAYPAL_IMAGE = "http://www.paypal.com/en_US/i/btn/btn_paynowCC_LG.gif"
+PAYPAL_SANDBOX_IMAGE = PAYPAL_IMAGE
+# maximum length for comments
+COMMENT_MAX_LENGTH = 3000

@@ -13,6 +13,7 @@ from django.contrib.auth import authenticate
 from scraper.models import Scraper
 from market.models import Solicitation
 from frontend.forms import CreateAccountForm
+from frontend.models import UserToUserRole
 from registration.backends import get_backend
 
 import django.contrib.auth.views
@@ -20,20 +21,27 @@ import os
 import re
 import datetime
 
-def frontpage(request):
+def frontpage(request, public_profile_field=None):
     user = request.user
 
     # The following items are only used when there is a logged in user.	
     if user.is_authenticated():
         my_scrapers = user.scraper_set.filter(userscraperrole__role='owner', deleted=False)
         following_scrapers = user.scraper_set.filter(userscraperrole__role='follow')
-
         # needs to be expanded to include scrapers you have edit rights on.
         contribution_scrapers = my_scrapers
+        try:
+        	profile_obj = user.get_profile()
+    	except ObjectDoesNotExist:
+        	raise Http404
+    	if public_profile_field is not None and \
+       	 not getattr(profile_obj, public_profile_field):
+        	profile_obj = None
     else:
         my_scrapers = []
         following_scrapers = []
         contribution_scrapers = []
+        profile_obj = None
 
     contribution_count = len(contribution_scrapers)
     good_contribution_scrapers = []
@@ -44,12 +52,13 @@ def frontpage(request):
             good_contribution_scrapers.append(scraper)
 
     #new scrapers
-    new_scrapers = Scraper.objects.filter(deleted=False, published=True).order_by('-created_at')[:5]
+    new_scrapers = Scraper.objects.filter(deleted=False, published=True).order_by('-first_published_at')[:5]
     
+
     #suggested scrapers
     solicitations = Solicitation.objects.filter(deleted=False).order_by('-created_at')[:5]
     
-    return render_to_response('frontend/frontpage.html', {'my_scrapers': my_scrapers, 'solicitations': solicitations, 'following_scrapers': following_scrapers, 'new_scrapers': new_scrapers, 'contribution_count': contribution_count}, context_instance = RequestContext(request))
+    return render_to_response('frontend/frontpage.html', {'my_scrapers': my_scrapers, 'solicitations': solicitations, 'following_scrapers': following_scrapers, 'profile': profile_obj, 'new_scrapers': new_scrapers, 'contribution_count': contribution_count}, context_instance = RequestContext(request))
 
 def process_logout(request):
     logout(request)
@@ -93,7 +102,6 @@ def login(request):
                     else:
                         return HttpResponseRedirect(reverse('frontpage'))
 
-
                 else:
                     # Account exists, but not activated                    
                     error_messages.append("This account has not been activated, please check your email and click on the link to confirm your account")
@@ -110,7 +118,7 @@ def login(request):
                 #sign straight in
                 signed_in_user = auth.authenticate(username=request.POST['username'], password=request.POST['password1'])
                 auth.login(request, signed_in_user)                
-                
+
                 #redirect
                 if redirect:
                     return HttpResponseRedirect(redirect)
