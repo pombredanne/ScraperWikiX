@@ -1,6 +1,5 @@
 from django.conf.urls.defaults import *
 
-
 # please use "import <something> as local_name" as this removes issues of name collision.
 import frontend.views as frontend_views
 
@@ -14,6 +13,13 @@ import settings
 from django.contrib import admin
 admin.autodiscover()
 
+from frontend.feeds import LatestScrapers, LatestScrapersBySearchTerm, LatestScrapersByTag
+
+feeds = {
+    'latest_scrapers': LatestScrapers,
+    'latest_scrapers_by_search_term': LatestScrapersBySearchTerm,
+    'latest_scrapers_by_tag': LatestScrapersByTag,
+}
 
 # sort out clash between from django.db import models and codewiki.models
 # collectors should make django tables (difficult) under development
@@ -43,11 +49,13 @@ urlpatterns = patterns('',
     #paypal
     (r'^paypal/notifications/56db6e2700d04e38a5d/', include('paypal.standard.ipn.urls')),
     
-    #market place
+    # market place
     url(r'^market/', include('market.urls')),
     
-    #favicon
+    # favicon
     (r'^favicon\.ico$', 'django.views.generic.simple.redirect_to', {'url': '/media/images/favicon.ico'}),
 
     
+    # RSS feeds  
+    (r'^feeds/(?P<url>.*)/$', 'django.contrib.syndication.views.feed', {'feed_dict': feeds}),
 )
