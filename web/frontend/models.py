@@ -5,7 +5,7 @@ from django.contrib.auth.models import User
 class UserProfile(models.Model):
     """
 	    This model holds the additional fields to be associated with a user in the system
-        
+
         the alerts_last_sent and alert_frequency field hold when a notification email was last sent to this user
         and the frequency of these messages(in seconds) as requested by the user.
         
@@ -22,9 +22,8 @@ class UserProfile(models.Model):
 
     def get_absolute_url(self):
         return ('profiles_profile_detail', (), { 'username': self.user.username })
-    get_absolute_url = models.permalink(get_absolute_url)
-
-
+    get_absolute_url = models.permalink(get_absolute_url)        
+        
 # models related to user roles
 
 class UserRoleManager(models.Manager):

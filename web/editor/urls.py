@@ -1,15 +1,26 @@
 from django.conf.urls.defaults import *
 import views
+import code_runner
 
-#
-# producing the variations on the editor/<short_name> URL by appending commands on the end is not ideal
-# but works for now and can be changed by altering this file alone
-# 
+# urls prefixed with "/editor/"
 
 urlpatterns = patterns('',
-  url(r'^(?P<short_name>[\-\w]*?)/RUN$',  views.run,        name="editor_run"),         # makes the call to the firebox
-  url(r'^(?P<short_name>[\-\w]*?)/SAVE$', views.savecommit, name="editor_savecommit"),  # this requires the code to be POSTed
-  url(r'^(?P<short_name>[\-\w]*?)/RAW$',  views.raw,        name="editor_raw"),         # text output of the code along for the reload feature
-  url(r'^(?P<short_name>[\-\w]*)$',       views.edit,       name="editor"),             # produces the standard editor page
-    
+
+  # DO NOT MOVE THIS LINE BELOW ANY OTHER LINE UNLESS YOU KNOW WHAT YOU ARE DOING
+  url(r'^run_code$',                    code_runner.run_code, name="run_code"),
+  
+  url(r'^$',                            views.edit, name="editor"),    # blank name for draft scraper
+  url(r'^(?P<short_name>[\-\w]+)$',     views.edit, name="editor"),
+  
+  
+  url(r'^draft/delete/(?P<short_name>[\-\w]+)$',                views.delete_draft, name="delete_draft"),
+  url(r'^draft/deleteall$',                                     views.delete_all_drafts, name="delete_all_drafts"),
+  url(r'^draft/save/(?P<short_name>[\-\w]+)$',                  views.save_draft,   name="save_draft"),
+  
+  url(r'diff/$',                        views.diff,         name="diff"),   # blank name for draft scraper
+  url(r'diff/(?P<short_name>[\-\w]+)$', views.diff,         name="diff"),
+  
+  url(r'raw/$',                         views.raw,          name="raw"),   # blank name for draft scraper
+  url(r'raw/(?P<short_name>[\-\w]+)$',  views.raw,          name="raw"),   # blank name for draft scraper
+  
 )

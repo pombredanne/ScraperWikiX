@@ -1,6 +1,9 @@
 {% extends "frontend/base.html" %}
+{% load humanize %}
 
 {% block title %}{{ scraper.title }}{% endblock %}
+{% block rss %}<link rel="alternate" type="application/rss+xml" title="RSS" href="/feeds/scraper_comments/{{ scraper.short_name }}" />{% endblock %}
+
 {% block content %}
     <div class="page_title">
 	    <h1>{{ scraper.title }}</h1>
@@ -12,31 +15,65 @@
   	  {% endif %}
 
   	  <div>
-  		{% if user_owns_it %}
-  		  <p>You own this scraper</p>
-  		{% endif %}
-  		{% if user_follows_it %}
-  		  <p>You are following this scraper</p>
-  		{% endif %}
+					{% if user.is_authenticated %}
+	    {% if not user_owns_it   %}
+  					{% if user_follows_it %}
+  		  				<p>You are watching this scraper, and will be alerted if it changes or appears to be broken. 
+	
+							<form method="get" action="{% url scraper_unfollow scraper.short_name %}">
+                  				<input type="submit" value="Stop watching" />
+              				</form>
+						</p>
+
+  		   			{% else %} 
+
+             			<p>
+              				<form method="get" action="{% url scraper_follow scraper.short_name %}">
+                  				<input type="submit" value="Watch scraper" /> (You will be alerted if this scraper changes or appears to be broken)
+              				</form>
+              			</p> 
+
+  						
+					{% endif %}
+  		   				{% else %} 
+						You own this scraper
+  						{% endif %}
+  						{% endif %}
   	  </div>
+
 
     </div>
     <div class="content col right">
         <div class="metadata">
           <dl>
-              <dt>Source:</dt>
-              <dd>{{scraper.source}}</dd>
-        	  <dt>License:</dt><dd>{{scraper.license}}</dd>
+              <dt>Created by:</dt>
+              <dd><a href="{% url profiles_profile_detail scraper.owner.username %}">
+              {% load gravatar %} {% show_gravatar scraper.owner 'small' %}&nbsp;{{scraper.owner.username}}</a></dd>
+        	  <dt>Data licence:</dt>
+        	  <dd>{{scraper.license|default:"&nbsp;"}}</dd>
         	  <dt>Scraper created:</dt><dd>{{scraper.created_at}}</dd>
-        	  <dt>Last Run:</dt>
-        	  <dd>{{scraper.last_run}}</dd>
+        	  <dt>Last run:</dt>
+        	  <dd>{{scraper.last_run|naturalday|default:"never"|title}}</dd>
         	  <dt>Records:</dt>
-        	  <dd>{{scraper.record_count}}</dd>
+        	  <dd>{{ scraper.record_count }}</dd>
         	  <dt>API short name:</dt>
         	  <dd>{{scraper.short_name}}</dd>
-        	  <dt>Language:</dt>
-        	  <dd>{{scraper.language}}</dd>
+            <dt>Language:</dt>
+            <dd>{{scraper.language}}</dd>
+            <dt>Tags:</dt>
+            {% if scraper.published %}
+                <dd>{% for tag in scraper_tags %}<a href="{% url tag tag %}">{{ tag }}</a> {% endfor %}</dd>
+            {% else %}
+                <dd>{% for tag in scraper_tags %}{{ tag }} {% endfor %}</dd>
+            {% endif %}
           </dl>
+          
+          <div class="tab_tools">
+              <form method="get" action="{% url editor scraper.short_name %}">
+                  <input type="submit" value="Edit scraper" />
+              </form>
+          </div>
+          
         </div>
     </div>
     <br class="clear"/>
@@ -49,12 +86,27 @@
                 <li{% ifequal selected_tab "code" %} class="selected"{% endifequal %}>
                     <a href="{% url scraper_code scraper.short_name %}">Code</a>
                 </li>
+                <li{% ifequal selected_tab "contributors" %} class="selected"{% endifequal %}>
+                    <a href="{% url scraper_contributors scraper.short_name %}">Contributors
+						{% with scraper.contributors.count as count %}
+						    ({{ count|add:"1" }})
+						{% endwith %}</a>
+                </li>
+                {% load comments %}
+                <li{% ifequal selected_tab "comments" %} class="selected"{% endifequal %}>
+                    <a href="{% url scraper_comments scraper.short_name %}">Notes &amp; questions 
+                       {% get_comment_count for scraper as cc %}({{ cc }})</a>
+                </li>
             </ul>
+            
         </div>
         <div class="page_tab_body">
+                    
             {% block tab %}
             {% endblock %}
         </div>
-        Important:If you suspect the scraper breaks our <a href="/terms_and_conditions/">Terms &amp; Conditions</a>. please, report it.
+        <p class="report">
+            <strong>Important</strong> If you suspect this scraper breaks our <a href="/terms_and_conditions/">Terms &amp; Conditions</a>, please <a href="/contact/">report it</a>
+        </p>
     </div>
 {% endblock %}

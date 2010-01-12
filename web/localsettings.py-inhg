@@ -1,6 +1,17 @@
 # local configurations for your computer.  Do not commit to Mercurial unless saved under 'localsettings.py-inhg'
 
 import os
+import sys
+
+DEBUG = True
+TEMPLATE_DEBUG = DEBUG
+
+ADMINS = (
+    # ('Your Name', 'your_email@domain.com'),
+)
+
+MANAGERS = ADMINS
+
 
 DATABASE_ENGINE     = 'mysql'       # 'postgresql_psycopg2', 'postgresql', 'mysql', 'sqlite3' or 'oracle'.
 DATABASE_NAME       = '' # Or path to database file if using sqlite3.
@@ -8,7 +19,7 @@ DATABASE_USER       = ''   # Not used with sqlite3.
 DATABASE_PASSWORD   = ''         # Not used with sqlite3.
 URL_ROOT            = '/'           # prefix for URLs to run not at top level of domain
 
-HOME_DIR = '${buildout:directory}' # the parent directory of SCRAPERWIKI_DIR
+HOME_DIR = '/home/.../scraperwiki' # the parent directory of SCRAPERWIKI_DIR
 SCRAPERWIKI_DIR     = HOME_DIR + '/web/'      # top level directory of the installation
 READINGS_DIR        = SCRAPERWIKI_DIR + '/readings/'  # directory containing the cached webpages
 MODULES_DIR         = SCRAPERWIKI_DIR                # directory containing readers, detectors, collectors, and observers modules
@@ -22,3 +33,42 @@ DATASTORE_DATABASE_PASSWORD   = ''         # Not used with sqlite3.
 DATASTORE_DATABASE_PORT   = '3306'
 
 FEEDBACK_EMAIL = 'feedback@somedomain.com'
+FEEDBACK_EMAIL_TITLE = '[ScraperWiki Feedback]'
+
+EMAIL_HOST = 'localhost'
+EMAIL_PORT = '1025'
+EMAIL_SUBJECT_PREFIX = "[ScraperWiki Bugs] "
+
+SESSION_TIMEOUT = 1209600
+
+QUICKCACHE_DIR      = HOME_DIR + '/quickcache/'   # leave blank to disable caching
+
+
+# Define how scraper code should be run.
+# There are 3 available settings:
+# 
+# 1. firestarter_apache
+# 2. firestarter_django
+# 3. popen
+# 
+# The first option is prefered as it allows running code securly,
+# streaming output and killing processes.
+# 
+# The second option will work in most cases, but will not stream code.
+# 
+# The third option will only work is settings.DEBUG is true as it
+# allows code to run as the apache user on the server without 
+# any control.
+
+CODE_RUNNING_MODE = 'firestarter_django'
+
+
+FIREBOX_PATH = ''
+sys.path.append(FIREBOX_PATH)
+
+#paypal
+PAYPAL_RECEIVER_EMAIL = "your_paypal_sandbox_email@example.com"
+EMAIL_FROM = 'noreply@localhost'
+MARKET_BOUNTY_CHARGE = 6.3
+
+API_DOMAIN = ''

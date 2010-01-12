@@ -1,107 +1,234 @@
 {% extends "editor_base.html" %}
-
 {% block css %}
-  <link rel="stylesheet" type="text/css" href="{{ MEDIA_URL }}css/editor.css" />
-  <link rel="stylesheet" type="text/css" href="{{ MEDIA_URL }}css/main.css" />
+    <link rel="stylesheet" type="text/css" href="{{ MEDIA_URL }}css/jquery-ui-1.7.2.custom.css" />
+    <link rel="stylesheet" type="text/css" href="{{ MEDIA_URL }}css/main.css" />
+    <link rel="stylesheet" type="text/css" href="{{ MEDIA_URL }}css/editor.css" />
 {% endblock %}
 
 {% block js %}
-  <script type="text/javascript" src="{{ MEDIA_URL }}js/jquery-1.3.2.js"></script>
-  <script type="text/javascript" src="{{ MEDIA_URL }}js/jquery.form.js"></script>
+    {% comment %}
+        Below needed for orbited, don't remove.  
+        See http://orbited.org/wiki/Deployment#Cross-SubdomainDeployment 
+        for more.
+    {% endcomment %}
+    <script>document.domain = document.domain;</script>
 
-  <script type="text/javascript" src="{{ MEDIA_URL }}CodeMirror-0.63/js/codemirror.js"></script>
-  <script type="text/javascript" src="{{ MEDIA_URL }}js/editor.js"></script>
-
-  <script type="text/javascript">
-  var codeeditor;
-  $(document).ready(function() 
-  {
-    codeeditor = CodeMirror.fromTextArea("id_{{editorform.codearea.name}}", 
-    {
-        parserfile: ["../contrib/python/js/parsepython.js"],
-        stylesheet: "/media/CodeMirror-0.63/contrib/python/css/pythoncolors.css",
-        path: "/media/CodeMirror-0.63/js/",
-        textWrapping: false, 
-        lineNumbers: true, 
-        indentUnit: 4,
-        readOnly: false,
-        tabMode: "spaces", 
-        autoMatchParens: true,
-        width: '100%',
-        parserConfig: {'pythonVersion': 2, 'strictErrors': true}, 
-        saveFunction: function () { $("#id_{{editorform.codearea.name}}").val(codeeditor.getCode());  $("#codewikiform").submit(); }   // this is your Control-S function
-    });
-
-    // convert both forms into ajax with the same target area, and return keyboard focus to the editing window
-    // you can comment this ajaxifying out to see the errors that get surpressed in this window
-    var formoptions = { target: '#outputarea', success: function() { codeeditor.focus(); } }; 
-    $('#runform').ajaxForm(formoptions);         // bind form using 'ajaxForm' 
-    $('#codewikiform').ajaxForm(formoptions);   // bind form using 'ajaxForm' 
-
-    // this is your reload function.  
-    // In the future it should select and highlight the range of lines that were changed
-    $('#reloadbutton').click( function() 
-    {
-        codeeditor.setCode($.ajax({url: $("#id_{{editorform.editorcoderaw.name}}").val(), async: false}).responseText); 
-        codeeditor.focus(); 
-    }); 
-  })
-  </script>
+    <script src="http://localhost:8001/static/Orbited.js"></script>
+    <script type="text/javascript" src="{{ MEDIA_URL }}js/jquery-1.3.2.js"></script>
+    <script type="text/javascript" src="{{ MEDIA_URL }}js/jquery-ui-1.7.2.custom.min.js"></script>
+    <script type="text/javascript" src="{{ MEDIA_URL }}js/json-min.js"></script>
+    <script type="text/javascript" src="{{ MEDIA_URL }}js/jquery.htmlClean-min.js"></script>
+    <script type="text/javascript" src="{{ settings.CODEMIRROR_URL }}js/codemirror.js"></script>
+    <script type="text/javascript" src="{{ MEDIA_URL }}js/editor.js?"></script>  
 {% endblock %}
 
-{% block header %}
-  {{ scraper.title }}
+{% block title %}
+    {{ scraper.title }} | ScraperWiki
 {% endblock %}
 
 {% block content %}
 
-<div class="editor">
-    <div class="editor_header">
-        <h1>{{ scraper.title }}</h1>
+    <fieldset>
+        {# Hidden inputs for passing to js #}
+        <input type="hidden" id="scraper_short_name" value="{{ scraper.short_name }}"/>
+        <input type="hidden" id="scraper_guid" value="{{ scraper.guid }}"/>
+        <input type="hidden" id="code_runningMode" value="{{ settings.CODE_RUNNING_MODE|escape }}"/>    
+        <input type="hidden" id="codemirror_url" value="{{ settings.CODEMIRROR_URL }}"/>
+    </fieldset>
+    <form method="POST" accept-charset="utf-8" id="editor" action="">
+        <div class="editor">
+            {% if has_draft %}
+            <div class="draft_warning">
+                Warning: this scraper has not been saved or committed. Click the save button or <a href="{% url delete_draft scraper.short_name|default:"__new__" %}">discard changes</a>.
+            </div>
+            {% endif %}
+
+            {# Header #}
+            <div class="editor_header">
+                <div class="title">
+                    {{ form.title }}
+                </div>
+                <div id="meta_fields_mini">
+                    {# for form elements that are shown in the popup #}
+
+                    <div class="field field-title">
+                        <label for="id_meta_title">{{ form.title.label}}</label>
+                        <input type="text" name="title" value="" id="id_meta_title">
+                    </div>
+
+                    <div class="field field-description">
+                        <label for="id_description">{{ form.description.label}} {{ form.license.errors }}</label>
+                        {{ form.description }}
+                    </div>
+            
+                    <div class="field field-license">
+                        <label for="id_license">{{ form.license.label }} {{ form.license.errors }}</label>
+                        {{ form.license }}
+
+                    </div>
+            
+                    <div class="field field-source">
+                        <label for="id_source">{{ form.source.label}} {{ form.source.errors }}</label>
+                        {{ form.source }}
+                    </div>
+
+                    <div class="field field-tags">
+                        <label for="id_tags">{{ form.tags.label}} {{ form.tags.errors }}</label>
+                        {{ form.tags }}
+                    </div>
+
+                    <div class="field field-commit_message">
+                      <label for="id_commit_message">{{ form.commit_message.label}} {{ form.commit_message.errors }}</label>
+                      {{ form.commit_message }}
+                    </div>
+
+                </div>
+
+                <ul class="help">
+                    <li>
+                        <a id="menu_shortcuts" href="#" title="Key combinations for saving, executing etc">Keyboard shortcuts</a>
+                    </li>
+                    <!--
+                    <li>
+                        <a id="menu_settings" href="#">Editor settings</a>
+                    </li>
+                    -->
+                    <li class="helplink">
+                        <a id="menu_documentation" href="#" title="Quick help">Code documentation</a>
+                    </li>
+                </ul>          
+            </div>
+
+            {# Code editor #}
+            <div class="editor_code" id="codeeditordiv">
+                {{ form.code }}
+            </div>
+
+            {# Controls #}
+            <div class="editor_controls">
+                <input type="submit" class="save  button" name="action" value="Save draft" title="Save draft version" />            
+                <input type="button" value="Diff" name="diff" id="diff" title="View diff with the committed version"/>
+                <input type="button" value="Reload" name="reload" id="reload" title="Reload the latest saved version"/>
+                <input type="button" class="execute" value="Run" name="run" id="run" title="Run this scraper"/>
+                <img id="running_annimation" src="{{ MEDIA_URL }}/images/running.gif"/>
+                <div class="right">
+                    {% if scraper.short_name %}
+                        <a id="aCloseEditor" href="{% url scraper_code scraper.short_name %}" title="Return to scraper page">Close editor</a>
+                    {% else %}
+                        <a id="aCloseEditor" href="{% url frontpage %}" title="Close editor">Close editor</a>                
+                    {% endif %}
+                    <input type="submit" class="commit button" name="action" value="Commit and publish" title="Commit this scraper and publish on the site"/>            
+                </div>
+            </div>
+
+            {# Consoles #}
+            <div id="outputeditordiv" class="editor_output">
+                <div class="tabs">
+                    <ul>
+                        <li class="console">
+                            <a href="#" title="Console output from scraper">Console</a>
+                        </li>
+                        <li class="data">
+                            <a href="#" title="The data that this scraper generates">Data</a>                            
+                        </li>
+                        <li class="sources">
+                            <a href="#" title="Pages you are scraping">Sources</a>                            
+                        </li>
+                    </ul>
+                </div>
+                <div class="info">
+                    <div id="output_console" class="output">
+                        <div class="output_content"></div>
+                    </div>
+                    <div id="output_data" class="output">
+                        <table class="output_content">
+
+                        </table>
+                    </div>
+                    <div id="output_sources" class="output">
+                        <div class="output_content"></div>
+                    </div>
+                </div>
+                <iframe name="console" id="console" style="display:none;"><pre></pre></iframe>
+            </div>
+      </div>
+      
+      <div id="feedback_messages">
+          
+      </div>
+
+{% endblock %}
+
+{% block popups %}    
+    <div id="meta_form" class="popup_item"><a class="popupClose">x</a></div>
+    <div id="diff" class="popup_item"><a class="popupClose">x</a><pre></pre></div>
+    <div id="popup_shortcuts" class="popup_item">
+        <a class="popupClose">x</a><pre></pre>
+        <h3>Keyboard shortcuts</h3>
         <ul>
-            <li><a href="#">Keyboard shortcuts</a></li>
-            <li><a href="#">Editor settings</a></li>
-            <li class="helplink"><a href="#">Code documentation</a></li>
+            <li>Control-S   Save</li>
+            <li>Control-E   Run</li>
+            <li>Control-R   Reload</li>
+            <li>Control-D   Diff</li>
         </ul>
     </div>
+    <div id="popup_settings" class="popup_item">
+        <a class="popupClose">x</a>
+        <h3>Editor settings</h3>
+    </div>    
+    <div id="popup_documentation" class="popup_item">
+        <a class="popupClose">x</a>
+        <dl class="quick_help">
+            <h4>Storing data <a href="/editor/datastore_demo" target="_blank">demo</a></h4>
+            <ul>
+                <li><code><b>save</b>(unique_keys=[], data={}, date=None, latlng=[None,None])</code>
+                    Saves to the datastore, over-writing data with the same values for unique_keys.
+                </li>
+            </ul>                
 
-    <form id="codewikiform" method="POST" accept-charset="utf-8" action="{% url editor_savecommit short_name=short_name %}">
-        <div class="editor_code">{{ editorform.codearea }}</div>
-        <div id="resizebar" class="resizebar">&nbsp;</div>
-        <div class="editor_controls">
-            <input type="submit" name="action" value="Save" />            
-            <input type="button" value="Reload" id="reloadbutton"/>   
-            <!--<input type="submit" name="action" value="SaveAndRun" /> -->
-            <span class="hiddenfields"> {{editorform.starttime}} {{editorform.short_name}} {{editorform.username}} {{editorform.editorcoderaw}} </span>
-            <div class="right">
-                <a href="{% url scraper_code scraper.short_name %}">Close and discard changes</a>
-                <input type="submit" name="action" value="Commit and close" id="commit"/>            
-            </div>
+            <h4>Geo location <a href="/editor/datastore_demo" target="_blank">demo</a></h4>
+            <ul>
+                <li><code><b>gb_postcode_to_latlng</b>(postcode)</code>
+                    returns (lat,lng) pair for a postcode
+                </li>
+                <li><code><b>geo.os_easting_northing_to_latlng</b>(easting, northing)</code>
+                    returns (lat,lng) pair for a OS Grid easting, northing coordinates
+                </li>
+            </ul>                
+
+            <h4>Recommended libraries</h4>
+            <ul>
+                <li><code><b>urllib2</b>, <b>urlparse</b></code>
+                    Standard python libraries for opening urls.  <a href="/editor/urllib2_demo" target="_blank">demo</a>  <a href="http://docs.python.org/library/urllib2.html" target="_blank">docs</a>
+                </li>
+                <li><code><b>BeautifulSoup</b></code>
+                    For parsing html.  <a href="/editor/beautifulsoup_demo" target="_blank">demo</a>  <a href="http://www.crummy.com/software/BeautifulSoup/" target="_new">docs</a>
+                </li>
+                <li><code><b>mechanize</b></code>
+                    For navigating form fillings.  <a href="/editor/mechanize_demo" target="_blank">demo</a>  <a href="http://wwwsearch.sourceforge.net/mechanize/" target="_new">docs</a>
+                </li>
+                <li><code><b>lxml</b></code>
+                    For parsing html and accessing it using cssselect.  <a href="/editor/lxml_demo" target="_blank">demo</a>  docs
+                </li>
+                <li><code><b>pdftoxml</b>(pdfdata)</code>
+                    Converts the binary data of a PDF file into a parsable XML string
+                </li>
+            </ul>
+
+            <p><a href="{% url help_code_documentation %}" target="_blank">Full code documentation</a> (opens in new window).</p>
+
+        </dl>
+    </div>
+    <div id="popup_text" class="popup_item">
+        <a class="popupClose">x</a>
+        <div class="tabs">
+          <ul>
+            <li class="raw_tab"><a href="#">RAW</a></li>
+            <li class="html_tab"><a href="#">HTML</a></li>
+          </ul>
         </div>
-    </form>
-
-    <form id="runform" method="POST" accept-charset="utf-8" action="{{runactionurl}}">
-        <input type="submit" name="action" value="Run" id="run_script"/>
-        {{ runform.codeline }}
-        <span class="hiddenfields">{{runform.starttime}} {{runform.short_name}} {{runform.username}}</span>
-    </form>
-
-    <div class="editor_output">
-    <div class="tabs">
-    <ul>
-        <li class="selected">Output</li>
-        <li>Data</li>
-        <li>Sources</li>
-    </ul>
-    </div>
-    </div>
-    <div style='width: 1140px; height: 400px; overflow: auto;'><span id="outputarea">output stuff here</span></div>
-</div>
-
+        <div class="popup_html output"><iframe></iframe></div>
+        <div class="popup_raw output" style="display:none"><pre></pre></div>
+    </div>            
+</form>
 {% endblock %}
-{% block popups %}
-    <div id="test" class="popup_item">
-        Bla Bla
-    </div>
-{% endblock %}
-

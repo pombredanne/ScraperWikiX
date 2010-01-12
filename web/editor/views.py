@@ -1,208 +1,255 @@
-import re, sys, os, datetime
-
+import re
+import sys
+import os
+import datetime
+try:
+  import json
+except:
+  import simplejson as json
 from django.template import RequestContext
 from django.http import HttpResponseRedirect, HttpResponse
 from django.contrib.auth.models import User
 from django.shortcuts import render_to_response, get_object_or_404
 from django.core.urlresolvers import reverse
-from scraper.models import Scraper as ScraperModel, UserScraperRole, ScraperDraft
+from scraper.models import Scraper as ScraperModel, UserScraperRole
 from scraper import template
-
-from django import forms
-import difflib
+from scraper import vc
+import forms
 import settings
 
+def delete_draft(request, short_name=None):
+  if short_name == None:
+    short_name = "__new__"
+  if request.session['ScraperDraft'].get(short_name, None):
+    draft = request.session['ScraperDraft'][short_name]
+    all_drafts = request.session['ScraperDraft']
+    del all_drafts[short_name]
+    request.session['ScraperDraft'] = all_drafts
+    if draft.short_name:
+      return HttpResponseRedirect(reverse('editor', kwargs={'short_name' : draft.short_name}))
+  return HttpResponseRedirect(reverse('editor'))
 
-# various scraper execution functions which can be applied by a developer/demonstrater can to get it 
-# temporarily working in order not to get sidetracked into debugging something very very difficult 
-# when they could be doing something productive
+def delete_all_drafts(request):
+  try:
+    del request.session['ScraperDraft']
+  except:
+    pass
+  return HttpResponseRedirect(reverse('frontpage'))
+  
+def save_draft(request, short_name=None):
+  if short_name == None:
+    short_name = "__new__"
+  draft_form = forms.editorForm(request.POST)
+  savedForm = draft_form.save(commit=False)
+  savedForm.code = draft_form.cleaned_data['code']
+  request.session['ScraperDraft'][short_name] = savedForm
+  return HttpResponseRedirect(reverse('editor'))
 
 
-#
-# really crude function from the prototype version that will work when all else fails!  
-#
-def directsubprocessruntempfile(scraper, codefunction):
-    import tempfile, subprocess
-    fout = tempfile.NamedTemporaryFile(suffix=".py")
-    pythoncodeline = "import %s; %s.%s" % (scraper.short_name, scraper.short_name, codefunction)
-    fout.write(pythoncodeline)
-    fout.flush()
-    cmd = "python %s" % (fout.name)
-    env = { "DJANGO_SETTINGS_MODULE":'settings', "PYTHONPATH":"%s:%s" % (settings.SMODULES_DIR, settings.SCRAPERWIKI_DIR) }
-    p = subprocess.Popen(cmd, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, close_fds=True, env=env)
-    res = p.stdout.readlines()
-    fout.close()   # deletes the temporary file
-    return res
 
-
-#
-# a crude wrapper of the localhost firebox interface that may or may not get called directly from the browser in the future
-#
-def localhostfireboxurlcall(scraper, codefunction):
-    import urllib
+def diff(request, short_name=None):
+  if not short_name or short_name == "__new__":
+    return HttpResponse("Draft scraper, nothing to diff against", mimetype='text')
+  code = request.POST.get('code', None)    
+  if code:
+    scraper = get_object_or_404(ScraperModel, short_name=short_name)
+    scraper.code = scraper.committed_code()
+    return HttpResponse(vc.diff(scraper.code, code), mimetype='text')
+  return HttpResponse("Programme error: No code sent up to diff against", mimetype='text')
     
-    # desperate forcing to get the path right so it can execute a scraper
-    pythoncodeline = "import sys; sys.path.append('%s'); import %s; %s.%s" % (settings.SMODULES_DIR, scraper.short_name, scraper.short_name, codefunction)
-    #pythoncodeline = "import sys; print sys.path"  # useful for debugging
-    fireboxurl = "http://localhost:9004?" + urllib.urlencode([("code", pythoncodeline)])
-    fin = urllib.urlopen(fireboxurl)
-    res = [ re.sub("<", "&lt;", lin)  for lin in fin.readlines() ]
-    fin.close()   
-    return res
-
-
-# 
-# the wrapper of the FireStarter called from django so we can work out what settings we're going to need to program it with
-#
-def firestartermethodcall(scraper, codefunction):
-
-    # desperate measure to get to the place where the FireStarter module can be loaded
-    sys.path.append(os.path.join(settings.HOME_DIR, "UML", "Server", "scripts"))
-    import FireStarter
-    firestarter = FireStarter.FireStarter()
     
-    # set lots of interesting parameters and controls here
-    firestarter.setCPULimit(5)  # integer seconds
-    firestarter.addAllowedSites('.*\.gov\.uk')
-    firestarter.addPaths('/scraper/scrapers')
-    firestarter.addPaths('/home/mike/ScraperWiki/scrapers')
-    firestarter.setTraceback ('html')
-
-#    pythoncodeline = "import sys; sys.path.append('%s'); import %s; %s.%s" % (settings.SMODULES_DIR, scraper.short_name, scraper.short_name, codefunction)
-    pythoncodeline = "import %s; %s.%s" % (scraper.short_name, scraper.short_name, codefunction)
-    print pythoncodeline
-    fin = firestarter.execute(pythoncodeline, True)
-    
-    # should encode this quickly as fin.readlines() in FireStarter itself
-    res = [ ]
-    try:
-        while True:
-            line  = fin.readline()
-            if not line:
-                break
-            res.append(re.sub("<", "&lt;", line) + '<br/>')
-    except FireStarter.FireError, e :
-#      res.append(re.sub("<", "&lt;", str(e)))
-       res.append(str(e))
-
-    return res 
-
-
-# the form that puts out and loads the code for the scraper
-class editorForm(forms.Form):   # don't know what ModelForm does
-  short_name = forms.CharField(widget=forms.TextInput(attrs={"readonly":True}))
-  starttime  = forms.DateTimeField(widget=forms.TextInput(attrs={"readonly":True}))
-  username   = forms.CharField(widget=forms.TextInput(attrs={"readonly":True}))
-  codearea   = forms.CharField(widget=forms.Textarea({'cols':'80', 'rows':'10', 'style':'width:90%'}))
-  editorcoderaw = forms.CharField(widget=forms.TextInput(attrs={"readonly":True}))
-
-
-# the form that puts out and loads the code for the scraper 
-# (this might be impractical because it makes it impossible to put the Run button next to the Save button)
-class runForm(forms.Form):   
-  short_name = forms.CharField(widget=forms.TextInput(attrs={"readonly":True}))
-  starttime  = forms.DateTimeField(widget=forms.TextInput(attrs={"readonly":True}))
-  username   = forms.CharField(widget=forms.TextInput(attrs={"readonly":True}))
-  codeline   = forms.CharField(widget=forms.TextInput())
-
-
-#
-# this takes the short_name which is the name of the scraper, and redirects the buttons to the savecommit action
-#
-def edit(request, short_name):
+def raw(request, short_name=None):
+  if not short_name or short_name == "__new__":
+    return HttpResponse("Draft scraper, shouldn't do reload", mimetype='text')
   scraper = get_object_or_404(ScraperModel, short_name=short_name)
-  nowtime = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')  # the default output is an invalid date for the field
-  
-  editorcoderaw = reverse('editor_raw', kwargs={'short_name':scraper.short_name})
-  editorform = editorForm({"short_name":short_name, "codearea":scraper.saved_code(), "starttime":nowtime, "username":request.user, "editorcoderaw":editorcoderaw})
-  defaultcodeline = "Parse()"  # could be a user preference that is saved whenever it is changed
-  runform = runForm({"short_name":short_name, "codeline":defaultcodeline, "starttime":nowtime, "username":request.user})
-  
-  # set the url called when the run button is pressed
-  # this MUST have the same domain as the url of form, so this 9004 port method can't work with ajax -- only with specially made up iframe as a target
-  # possibly the rerouting to port 9004 could be done via some magic apache rewrite of //localhost/9004/
-  # runactionurl = "http://localhost:9004"
-  runactionurl = reverse('editor_run', kwargs={'short_name':scraper.short_name})
- 
-  params = {'scraper':scraper, 'short_name':short_name, 'editorform':editorform, 'runform':runform, 'runactionurl':runactionurl }
-  return render_to_response('editor.html', params, context_instance=RequestContext(request)) 
-
-
-#
-# outputs the code in a page on its own so we can do the reload button
-#
-def raw(request, short_name):
-  scraper = get_object_or_404(ScraperModel, short_name=short_name)
-  return HttpResponse(scraper.saved_code(), mimetype="text/plain")
-
-#
-# handles the running of the script when the Run button (in its own form) is pressed
-#
-def run(request, short_name):
-
-  if request.method != 'POST':
-    return HttpResponse(content="Error: no POST")
-  
-  scraper = get_object_or_404(ScraperModel, short_name=short_name)
-  runform = runForm(request.POST)
-
-  if not runform.is_valid(): 
-    return HttpResponse(content="Error: invalid form " + re.sub("<", "&lt;", str(runform.errors)))
-  
-  codefunction = runform.cleaned_data['codeline']
-
-  #difflist = directsubprocessruntempfile(scraper, codefunction)   # for running the prototype method
-  #difflist = localhostfireboxurlcall(scraper, codefunction)       # for running with a call to the firebox through http://localhost:9004
-  difflist = firestartermethodcall(scraper, codefunction)          # would require import FireStarter and to make lots of interesting settings to show what can be done
-  
-  # return the diff of the save in the #outputarea box 
-  return HttpResponse(content="".join(difflist))
-  
-  
-#
-# the save and commit action buttons from the editor, whose output goes into the #outputarea window
-# also temporary implements a saveandrun button 
-#
-def savecommit(request, short_name):
-  if request.method != 'POST':
-    return HttpResponse(content="Error: no POST")
-  
-  action = request.POST.get('action', 'save').lower()  # needs a default value because Control-S calls submit without any actions
-  
-  # recover the scraper we are saving to
-  scraper = get_object_or_404(ScraperModel, short_name=short_name)
-  editorform = editorForm(request.POST)
-  if not editorform.is_valid(): 
-    return HttpResponse(content="Error: invalid form " + re.sub("<", "&lt;", str(editorform.errors)))
-  
-  # unnecessary, but a sanity check
-  if editorform.cleaned_data['short_name'] != short_name:
-    return HttpResponse(content="Error: disagreement between short_names")
-    
-  # produce the diff file to indicate to the user exactly what they changed
-  submittedcode = editorform.cleaned_data['codearea']
-  currentcode = scraper.saved_code()  
-  if currentcode != submittedcode:
-    difftext = difflib.unified_diff(currentcode.splitlines(), submittedcode.splitlines())
-    difflist = [ diffline  for diffline in difftext  if not re.match("\s*$", diffline) ]
-    difflist.insert(0, "SAVING:" + action)
+  oldcodeineditor = request.POST.get('oldcode', None)
+  newcode = scraper.saved_code()
+  if oldcodeineditor:
+      sequencechange = vc.DiffLineSequenceChanges(oldcodeineditor, newcode)
+      res = "%s:::sElEcT rAnGe:::%s" % (str(list(sequencechange)), newcode)   # a delimeter that the javascript can find, in absence of using json
   else:
-    difflist = [ "NO CHANGE:" + action ]
-    
-  # attach the code to the scraper and use a function in vc.py which knows about the code member value to save it
-  scraper.code = submittedcode
-  bcommit = (action == "commit and close")
-  scraper.save(commit=bcommit)
+      res = newcode
+  return HttpResponse(res, mimetype="text/plain")
+
+
+
+def edit(request, short_name=None):
+  """
+  This is the main editor view.  Made more complex by bcause of the 
+  'lazy registration' model.  This is implemented by creating a copy
+  of the editor form in the session, so if this session exists then 
+  it should be loaded by default (see below for problems).
   
-  # run the code directly using the saveandrun button, 
-  # -- useful temporarily, but intended to become deprecated 
-  if action == "saveandrun":
-    #difflist = directsubprocessruntempfile(scraper, "Parse()")   # for running the prototype method
-    difflist = localhostfireboxurlcall(scraper, "Parse()")        # for running with a call to the firebox through http
-    #difflist = firestartermethodcall(scraper, "Parse()")         # would require import FireStarter and to make lots of interesting settings to show what can be done
-    
-    
-  # return the diff of the save in the #outputarea box 
-  return HttpResponse(content="\n".join(difflist))
+  The use cases are as follows:
+  
+  1. Scraper creation.  Scrapers can be run before saving/committing.  
+     Display the standard (empty) editor form at /editor.
+
+  2. Scraper editing.  Scrapers can be edited by anyone, but not saved
+     unless they are logged in.  Titles can be changed, but not short
+     names.  Display the existing editor at /editor/<shortname>
+  
+  In both the above cases, if a user isn't logged in then the form object
+  is saved in to the session and the user is redirected to the log in page
+  
+  After logging in they are redirected to the scraper they came from and 
+  the action they attepted (save or commit) is performed.  If the action 
+  is save then they are redirected to the editor page for that scraper, if
+  it's commit (and close) then they are redirected to the scrapers main page.
   
   
+    - `short_name` (optional) Short name of the Scraper from web.scrapers.models  
+
+  TODO:
+    * Only load draft for the correct scraper (sniff short_name, or new)
+    * If short_name exists, don't make a new one
+    
+  """
+  
+  # For special cases where we are calling from AJAX
+  if request.META.get('CONTENT_TYPE', '').startswith('json'):
+    is_json = True
+  else:
+    is_json = False
+  
+  if short_name == None:
+    short_name = "__new__"  
+  
+  if not request.session.get('ScraperDraft', None):
+    request.session['ScraperDraft'] = {}
+  # drafts are saved in session e.g. if you've been redirected to log in
+  draft = request.session['ScraperDraft'].get(short_name, None)
+  has_draft = False
+  # First off, create a scraper instance somehow.
+  # Drafts are seen as more 'important' than saved scrapers.
+  if draft:
+    has_draft = True
+    scraper.__dict__['commit_message'] = 'Scraper created'
+    if draft.short_name:
+      # We're working with an existing (saved?) scraper that has been edited, but not saved
+      scraper = draft
+      scraper.code = draft.code   
+    else:
+      # This is a new scraper that has been edited, but not saved
+      scraper = draft
+      scraper.code = draft.code
+  else:
+    # No drafts exist...
+    if short_name is not "__new__":
+      # ...and this is an existing scraper.  Load from the database and disk
+      # This happens after you've pressed the SAVE button
+      scraper = get_object_or_404(ScraperModel, short_name=short_name)
+      scraper.code = scraper.saved_code()
+      if not scraper.published:
+      	scraper.__dict__['commit_message'] = 'Scraper created'
+    else:
+      # This is a new scraper
+      scraper = ScraperModel()
+      scraper.code = template.default()['code']
+      scraper.__dict__['commit_message'] = 'Scraper created'
+
+  scraper.__dict__['tags'] = ", ".join(tag.name for tag in scraper.tags)
+ 
+  # display 'scraper created' commit message if scraper hasn't been saved yet
+  form = forms.editorForm(scraper.__dict__, instance=scraper)
+
+  form.fields['code'].initial = scraper.code
+  form.fields['title'].initial = scraper.title
+  
+  if request.method == 'POST' or bool(re.match('save|commit', request.GET.get('action', ""))):
+    if request.POST:
+    # If there is POST, then use that as the form
+      form = forms.editorForm(request.POST, instance=scraper)
+      action = request.POST.get('action').lower()
+    else:
+      # We only reach here when the GET action is scraper or commit, ('save or commit'?)
+      # and that only heppens when the 'draft' feature is being used.
+      if draft:
+        draft.__dict__['commit_message'] = 'Scraper created - hello world'
+        form = forms.editorForm(draft.__dict__, instance=draft)
+        form.code = draft.code
+        action = request.GET.get('action').lower()
+      else:
+        # The GET action was called incorrectly, so we just redurect to a cleaner URL
+        if short_name:
+          return HttpResponseRedirect(reverse('editor', kwargs={'short_name' : short_name}))
+        else:
+          return HttpResponseRedirect(reverse('editor'))
+    
+    if form.is_valid():
+      # Save the form without committing at first
+      # (read http://docs.djangoproject.com/en/dev/topics/forms/modelforms/#the-save-method)
+      savedForm = form.save(commit=False)
+      savedForm.tags = request.POST.get('tags')
+      
+      # Add some more fields to the form
+      savedForm.code = form.cleaned_data['code']
+      savedForm.description = form.cleaned_data['description']    
+      savedForm.license = form.cleaned_data['license']    
+      # savedForm.short_name = short_name
+      # if hasattr(scraper, 'pk'):
+      #   savedForm.pk = scraper.pk
+
+      if request.user.is_authenticated():
+        # The user is authenticated, so we can process the form correctly
+        if action == 'save':
+          savedForm.save()
+        if action.startswith('commit'):          
+          message = None
+          if request.POST.get('commit_message', False):
+            message = request.POST['commit_message']
+          savedForm.save(commit=True, message=message, user=request.user.pk)
+          
+        if savedForm.owner():
+          # Set the owner.
+          # If there is already an owner, and it is not this user, mark this user as an editor
+          # If the scraper has no owner, then the current user takes ownership
+          if savedForm.owner().pk != request.user.pk:
+            savedForm.add_user_role(request.user, 'editor')
+        else:
+          savedForm.add_user_role(request.user, 'owner')
+        
+        # If the scraper saved, then we can delete the draft  
+        if request.session['ScraperDraft'].get(short_name, False):
+          all_drafts = request.session['ScraperDraft']
+          del all_drafts[short_name]
+          request.session['ScraperDraft'] = all_drafts
+        
+        if is_json:
+          url = reverse('editor', kwargs={'short_name' : savedForm.short_name})
+          if action.startswith("commit"):
+            url = reverse('scraper_code', kwargs={'scraper_short_name' : savedForm.short_name})
+          res = json.dumps({
+          'redirect' : 'true',
+          'url' : url,
+          })
+          return HttpResponse(res)
+          
+        if action.startswith("commit"):
+          return HttpResponseRedirect(reverse('scraper_code', kwargs={'scraper_short_name' : savedForm.short_name}))
+        return HttpResponseRedirect(reverse('editor', kwargs={'short_name' : savedForm.short_name}))
+        
+      else:
+        # The user is not authenticated.
+        # This can happen when a user creates a scraper before logging in or registering
+        # When they hit the save button, by default an ajax call is made.  In this case we
+        # don't want to set a message or redirect them, we just return a JSON object.
+        drafts = request.session['ScraperDraft']
+        drafts[short_name] = savedForm
+        request.session['ScraperDraft'] = drafts
+            
+        # Set a message with django_notify
+        request.notifications.add("You need to sign in or create an account - don't worry, your scraper is safe ")
+        savedForm.action = action
+        if savedForm.short_name:
+          scraper_edit_url = reverse('editor', kwargs={'short_name' : savedForm.short_name}) + '?action=%s' % action
+        else:
+          scraper_edit_url = reverse('editor') + '?action=%s' % action
+        
+        if is_json:
+          return HttpResponse(json.dumps({'status' : 'OK', 'draft' : 'True', 'url': scraper_edit_url}))
+              
+        return HttpResponseRedirect(reverse('login') + "?next=%s" % scraper_edit_url)
+        
+        
+  return render_to_response('editor.html', {'form':form, 'scraper' : scraper, 'settings' : settings, 'has_draft': has_draft }, context_instance=RequestContext(request)) 

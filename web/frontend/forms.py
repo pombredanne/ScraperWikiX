@@ -6,21 +6,27 @@ from contact_form.forms import ContactForm
 from registration.forms import RegistrationForm
 from django.utils.translation import ugettext_lazy as _
 from django.contrib.auth.models import User
+from django.contrib.auth.forms import AuthenticationForm
 
 
 #from django.forms.extras.widgets import Textarea
 
 class UserProfileForm (ModelForm):
+
     alert_frequency = ChoiceField(choices = ((0, 'Instant'), (3600, 'Once an hour')))
+
     class Meta:
         model = UserProfile
         fields = ('bio', 'alert_frequency')
 
-
 class scraperContactForm(ContactForm):
-  subject_dropdown = django.forms.ChoiceField(label="Subject type", choices=(('suggestion', 'Suggestion about how we can improve something'),('help', 'Help using ScraperWiki'), ('bug', 'A bug or error')))
+  subject_dropdown = django.forms.ChoiceField(label="Subject type", choices=(('suggestion', 'Suggestion about how we can improve something'),('help', 'Help using ScraperWiki'), ('bug', 'Report a bug'), ('other', 'Other')))
   title = django.forms.CharField(widget=django.forms.TextInput(), label=u'Subject')
-  recipient_list = ["julian@goatchurch.org.uk"] # temporary save because this isn't set [settings.FEEDBACK_EMAIL]
+  recipient_list = [settings.FEEDBACK_EMAIL]
+
+class SigninForm (AuthenticationForm):
+    remember_me = django.forms.BooleanField(widget=django.forms.CheckboxInput(),
+                           label=_(u'Remember me'))
 
 
 class CreateAccountForm(RegistrationForm):
@@ -32,7 +38,9 @@ class CreateAccountForm(RegistrationForm):
     tos = django.forms.BooleanField(widget=django.forms.CheckboxInput(),
                            label=_(u'I agree to the Scraper Wiki terms and conditions'),
                            error_messages={ 'required': _("You must agree to the ScraperWiki terms and conditions") })
-
+    data_protection = django.forms.BooleanField(widget=django.forms.CheckboxInput(),
+                        label= u'I will not breach anyone\'s copyright, privacy or breach any laws including the Data Protection Act 1998',
+                        error_messages={ 'required': "You must agree to abide by the Data Protection Act 1998" })
 
     def clean_email(self):
        """

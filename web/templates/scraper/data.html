@@ -1,5 +1,66 @@
 {% extends "scraper/scraper_base.html" %}
-
+{% load replace %}
 {% block tab %}
+<div class="tab_tools">
+    {% if data_tables %}
+        <a href="{% url export_csv scraper.short_name %}" rel="nofollow">download csv</a>
+    {% else %}
+        <span class="faux_link">download csv</span>
+    {% endif %}
+</div>
 
+
+<div class="data_viewer">
+    {% if data_tables %}
+        {% for table, data in data_tables.items %}
+        <table>
+            <thead>
+                <tr>
+                    {% for heading in data.headings %}
+                        <th>{{ heading }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in data.rows %}
+                    <tr>
+                        {% for value in row %}
+                            <td>{{ value|urlizetrunc:15 }}</td>
+                        {% endfor %}
+                    </tr>
+                {% endfor %}    
+            </tbody>
+        </table>
+        {% endfor %}
+
+    {% else %}
+        <table class="raw_data">
+            <tbody>
+                <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+                <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+                <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+                <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+                <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+                <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+                <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+                <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+                <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+                <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+                <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+            </tbody>
+        </table>
+
+	    <div class="info_unpublished">
+            {% if scraper.published %}
+	            This scraper has not been run yet <br/>
+	            so there is nothing to display
+            {% else %}
+	            This scraper is being worked on <br/>but has not been published yet
+	        {% endif %}
+	    </div>
+
+
+    {% endif %}
+</div>
 {% endblock %}
+

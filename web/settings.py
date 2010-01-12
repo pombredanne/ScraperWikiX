@@ -1,5 +1,4 @@
-
-from os.path import exists
+from os.path import exists, join
 
 # This shouldn't be needed, however in some cases the buildout version of
 # django (in bin/django) may not make the paths correctly
@@ -8,16 +7,6 @@ sys.path.append('web')
 
 # Django settings for scraperwiki project.
 
-DEBUG = True
-TEMPLATE_DEBUG = DEBUG
-
-ADMINS = (
-    # ('Your Name', 'your_email@domain.com'),
-)
-
-MANAGERS = ADMINS
-
-# ALTER DATABASE scraperwiki CHARACTER SET=utf8;
 
 try:
   from localsettings import * 
@@ -39,10 +28,10 @@ USE_I18N = True
 # Absolute path to the directory that holds media.
 # Example: "/home/media/media.lawrence.com/"
 
-
 MEDIA_DIR = SCRAPERWIKI_DIR + 'media'
 MEDIA_URL = '/media/'
 MEDIA_ADMIN_DIR = SCRAPERWIKI_DIR + 'media-admin'
+LOGIN_URL = '/login/'
 
 # URL that handles the media served from MEDIA_ROOT. Make sure to use a trailing slash.
 MEDIA_ROOT = URL_ROOT + 'media/'
@@ -65,7 +54,7 @@ MIDDLEWARE_CLASSES = (
     'django.middleware.common.CommonMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
-    # 'debug_toolbar.middleware.DebugToolbarMiddleware',
+    'django_notify.middleware.NotificationsMiddleware',
 )
 
 ROOT_URLCONF = 'urls'
@@ -75,6 +64,15 @@ TEMPLATE_DIRS = (
     # Put strings here, like "/home/html/django_templates" or "C:/www/django/templates".
     # Always use forward slashes, even on Windows.
     # Don't forget to use absolute paths, not relative paths.
+)
+
+TEMPLATE_CONTEXT_PROCESSORS = (
+  'django.core.context_processors.auth',
+  'django.core.context_processors.debug',
+  'django.core.context_processors.i18n',
+  'django.core.context_processors.media',
+  'django.core.context_processors.request',
+  'django_notify.context_processors.notifications',
 )
 
 INSTALLED_APPS = (
@@ -90,18 +88,21 @@ INSTALLED_APPS = (
     'frontend',
   	'scraper',
   	'notification',
-  	'page_cache',
   	'editor',
   	'contact_form',
-    #'debug_toolbar'
+  	'payment',  	
+  	'market',
+  	'piston',      # needs 'django-piston' and 'phpserialize'
+  	'api',
+    #'debug_toolbar',
+  	'django_notify',
+  	'tagging',
+  	'django.contrib.humanize',
+  	'paypal.standard.ipn',
 )
 
 
 ACCOUNT_ACTIVATION_DAYS = 14
-
-#    'codewiki',
-# removed from installed apps so as to exclude them from the admin interface.
-#    'blog',
 
 # tell Django that the frontent user_profile model is to be attached to the user model in the admin side.
 AUTH_PROFILE_MODULE = 'frontend.UserProfile'
@@ -114,3 +115,25 @@ INTERNAL_IPS = ('127.0.0.1',)
 DEBUG_TOOLBAR_CONFIG = {
   'INTERCEPT_REDIRECTS' : False
 }
+
+
+NOTIFICATIONS_STORAGE = 'session.SessionStorage'
+REGISTRATION_BACKEND = "registration.backends.default.DefaultBackend"
+
+
+# define default directories needed for paths to run scrapers
+SCRAPER_LIBS_DIR = join(HOME_DIR, "scraperlibs")
+CODEMIRROR_URL = MEDIA_URL + "CodeMirror-0.64/"
+
+#send broken link emails
+SEND_BROKEN_LINK_EMAILS = DEBUG == False
+
+#paypal
+PAYPAL_IMAGE = "http://www.paypal.com/en_US/i/btn/btn_paynowCC_LG.gif"
+PAYPAL_SANDBOX_IMAGE = PAYPAL_IMAGE
+
+#pagingation
+SCRAPERS_PER_PAGE = 60
+
+#API
+MAX_API_ITEMS = 500
