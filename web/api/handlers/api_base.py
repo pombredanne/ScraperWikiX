@@ -3,10 +3,11 @@ from web.scraper.models import Scraper
 from piston.handler import BaseHandler
 from piston.utils import rc
 from api.models import api_key
+from settings import MAX_API_ITEMS
 import sys
 
 class APIBase(BaseHandler):
-    allowed_methods = ('GET',)        
+    allowed_methods = ('GET',)
     result = None
     error_response = False
     cache_duration = 0
@@ -24,17 +25,14 @@ class APIBase(BaseHandler):
         some way!
 
         """
-        try:
-            if request.GET.get('explorer_user_run', None) == '1':
-                request_api_key = 'explorer'
-            else:
-                request_api_key = api_key.objects.get(
-                    key=request.GET.get('key', None),
-                    active=True,
-                    )
-            return True
-        except:
-            return False
+        if request.GET.get('explorer_user_run', None) == '1':
+            request_api_key = 'explorer'
+        else:
+            request_api_key = api_key.objects.get(
+                key=request.GET.get('key', None),
+                active=True,
+                )
+        return True
 
     def validate(self, request):
 
@@ -91,8 +89,8 @@ class APIBase(BaseHandler):
             scraper = None
 
         return scraper
-        
-    def clamp_limit(limit):
+
+    def clamp_limit(self, limit):
         if limit == 0 or limit > MAX_API_ITEMS:
             limit = MAX_API_ITEMS
         return limit            
