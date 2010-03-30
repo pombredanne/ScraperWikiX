@@ -1,6 +1,6 @@
 #! /bin/sh
 ### BEGIN INIT INFO
-# Provides:          dispatcher
+# Provides:          controller
 # Required-Start:    $local_fs
 # Default-Start:     2
 # Short-Description: Start controller
@@ -11,20 +11,16 @@
 
 # Do NOT "set -e"
 
-NOBODY=`grep nobody /etc/passwd | cut -d: -f3`
-NOGROUP=`grep nogroup /etc/group | cut -d: -f3`
-
 # PATH should only include /usr/* if it runs after the mountnfs.sh script
 PATH=/sbin:/usr/sbin:/bin:/usr/bin
-DESC="Dispatcher"
-NAME=dispatcher
-CONFIG=/var/www/scraperwiki/uml/uml.cfg
-DAEMON=/usr/bin/python
-DAEMON_ARGS="/var/www/scraperwiki/uml/dispatcher/dispatcher.py --daemon --subproc --uid=$NOBODY --gid=$NOGROUP --config=$CONFIG"
-PWD=/var/www/scraperwiki/uml/dispatcher
+DESC="Controller"
+NAME=controller
+CONFIG=/scraperwiki/scripts/uml.cfg
+DAEMON=/scraperwiki/scripts/controller.py
+DAEMON_PATH=/scraperwiki/scripts
+DAEMON_ARGS="--daemon --subproc --addPath=$DAEMON_PATH --config=$CONFIG --firewall=auto"
 PIDFILE=/var/run/$NAME.pid
 SCRIPTNAME=/etc/init.d/$NAME
-
 
 # Exit if the package is not installed
 [ -x "$DAEMON" ] || exit 0
@@ -48,9 +44,9 @@ do_start()
 	#   0 if daemon has been started
 	#   1 if daemon was already running
 	#   2 if daemon could not be started
-	start-stop-daemon --start --quiet --pidfile $PIDFILE --chdir "$PWD" --exec $DAEMON --test > /dev/null \
+	start-stop-daemon --start --quiet --pidfile $PIDFILE --exec $DAEMON --test > /dev/null \
 		|| return 1
-	start-stop-daemon --start --quiet --pidfile $PIDFILE --chdir "$PWD" --exec $DAEMON -- \
+	start-stop-daemon --start --quiet --pidfile $PIDFILE --exec $DAEMON -- \
 		$DAEMON_ARGS \
 		|| return 2
 	# Add code here, if necessary, that waits for the process to be ready
