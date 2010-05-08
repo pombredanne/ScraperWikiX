@@ -2,6 +2,7 @@ import re
 import sys
 import os
 import datetime
+import random
 try:
   import json
 except:
@@ -11,11 +12,15 @@ from django.http import HttpResponseRedirect, HttpResponse
 from django.contrib.auth.models import User
 from django.shortcuts import render_to_response, get_object_or_404
 from django.core.urlresolvers import reverse
-from scraper.models import Scraper as ScraperModel, UserScraperRole
+
+from scraper.models import Scraper as ScraperModel  # is this renaming necessary?
+from scraper.models import UserScraperRole
+
 from scraper import template
 from scraper import vc
 import forms
 import settings
+
 
 # Delete the draft
 def delete_draft(request):
@@ -25,28 +30,28 @@ def delete_draft(request):
 
 # Diff
 def diff(request, short_name=None):
-  if not short_name or short_name == "__new__":
-    return HttpResponse("Draft scraper, nothing to diff against", mimetype='text')
-  code = request.POST.get('code', None)    
-  if code:
-    scraper = get_object_or_404(ScraperModel, short_name=short_name)
-    scraper.code = scraper.committed_code()
-    return HttpResponse(vc.diff(scraper.code, code), mimetype='text')
-  return HttpResponse("Programme error: No code sent up to diff against", mimetype='text')
+    if not short_name or short_name == "__new__":
+        return HttpResponse("Draft scraper, nothing to diff against", mimetype='text')
+    code = request.POST.get('code', None)    
+    if code:
+        scraper = get_object_or_404(ScraperModel, short_name=short_name)
+        scraper.code = scraper.committed_code()
+        return HttpResponse(vc.diff(scraper.code, code), mimetype='text')
+    return HttpResponse("Programme error: No code sent up to diff against", mimetype='text')
     
     
 def raw(request, short_name=None):
-  if not short_name or short_name == "__new__":
-    return HttpResponse("Draft scraper, shouldn't do reload", mimetype='text')
-  scraper = get_object_or_404(ScraperModel, short_name=short_name)
-  oldcodeineditor = request.POST.get('oldcode', None)
-  newcode = scraper.saved_code()
-  if oldcodeineditor:
-      sequencechange = vc.DiffLineSequenceChanges(oldcodeineditor, newcode)
-      res = "%s:::sElEcT rAnGe:::%s" % (str(list(sequencechange)), newcode)   # a delimeter that the javascript can find, in absence of using json
-  else:
-      res = newcode
-  return HttpResponse(res, mimetype="text/plain")
+    if not short_name or short_name == "__new__":
+        return HttpResponse("Draft scraper, shouldn't do reload", mimetype='text')
+    scraper = get_object_or_404(ScraperModel, short_name=short_name)
+    oldcodeineditor = request.POST.get('oldcode', None)
+    newcode = scraper.saved_code()
+    if oldcodeineditor:
+        sequencechange = vc.DiffLineSequenceChanges(oldcodeineditor, newcode)
+        res = "%s:::sElEcT rAnGe:::%s" % (str(list(sequencechange)), newcode)   # a delimeter that the javascript can find, in absence of using json
+    else:
+        res = newcode
+    return HttpResponse(res, mimetype="text/plain")
 
 
 # Handle Session Draft  
@@ -64,7 +69,7 @@ def handle_session_draft(request, action):
 
         success = False
         if not session_scraper_draft:
-            #Shouldent be here, go home
+            # Shouldn't be here, go home
             response_url = reverse(frontpage)
         else:
             draft_scraper = session_scraper_draft.get('scraper', None)
@@ -122,20 +127,35 @@ def edit(request, short_name=None):
         # Does a draft version exist?
         scraper = draft
         scraper.__dict__['tags'] = request.session['ScraperDraft'].get('tags', '')
-        scraper.__dict__['commit_message'] = request.session['ScraperDraft'].get('commit_message', '')        
+        scraper.commit_message = request.session['ScraperDraft'].get('commit_message', '')        
+    
     elif short_name is not "__new__":
         # Try and load an existing scraper
         scraper = get_object_or_404(ScraperModel, short_name=short_name)
         scraper.code = scraper.saved_code()
         scraper.__dict__['tags'] = ", ".join(tag.name for tag in scraper.tags)
         if not scraper.published:
-          scraper.__dict__['commit_message'] = 'Scraper created'
+            scraper.commit_message = 'Scraper created'
+    
     else:
-      # Create a new scraper
-      scraper = ScraperModel()
-      scraper.code = template.default()['code']
-      scraper.license = 'Unknown'
-      scraper.__dict__['commit_message'] = 'Scraper created'
+        # Create a new scraper
+        scraper = ScraperModel()
+        
+        # select a startup scraper value randomly from those with the right name (or flag)
+        # in the future we should have an isstartup flag on the scraper
+        lstartup_scrapers = ScraperModel.objects.filter(deleted=False, published=True)
+        startup_scrapers = [ scraper  for scraper in lstartup_scrapers  if re.match("startup-", scraper.short_name) ]
+        if not startup_scrapers:  # quick hack to make dev versions more interesting
+            startup_scrapers = lstartup_scrapers
+        if startup_scrapers:
+            print dir(startup_scrapers[0])
+            startupcode = startup_scrapers[random.randint(0, len(startup_scrapers)-1)].saved_code()
+        else:
+            startupcode = "for i in range(10):\n    print i"
+        
+        scraper.code = startupcode
+        scraper.license = 'Unknown'
+        scraper.commit_message = 'Scraper created'
 
     # 2) If no POST, then just render the page
     if not request.POST:
@@ -147,7 +167,13 @@ def edit(request, short_name=None):
         form.fields['license'].initial = scraper.license
         #form.fields['run_interval'].initial = scraper.run_interval
     
-        return render_to_response('editor/editor.html', {'form':form, 'scraper' : scraper, 'has_draft': has_draft}, context_instance=RequestContext(request))        
+        # in the future we should have an istutorial flag on the scraper
+        ltutorial_scrapers = ScraperModel.objects.filter(deleted=False, published=True)
+        tutorial_scrapers = [ scraper  for scraper in ltutorial_scrapers  if re.match("tutorial-", scraper.short_name) ]
+        if not tutorial_scrapers:  # quick hack to make dev versions more interesting
+            tutorial_scrapers = ltutorial_scrapers[:5]
+            
+        return render_to_response('editor/editor.html', {'form':form, 'tutorial_scrapers':tutorial_scrapers, 'scraper':scraper, 'has_draft':has_draft}, context_instance=RequestContext(request))        
     
     else:        
         # 3) If there is POST, then use that
@@ -198,16 +224,13 @@ def edit(request, short_name=None):
                     url = reverse('scraper_code', kwargs={'scraper_short_name' : savedForm.short_name})
 
                 # Build the JSON object and return it
-                res = json.dumps({
-                'redirect' : 'true',
-                'url' : url,
-                })    
+                res = json.dumps({'redirect':'true', 'url':url,})    
                 return HttpResponse(res)
 
             else:
 
-                # User is not loged in, save the scraper to the session
-                draft_session_scraper = {'scraper': savedForm, 'tags': request.POST.get('tags'), 'commit_message': request.POST.get('commit_message')}
+                # User is not logged in, save the scraper to the session
+                draft_session_scraper = { 'scraper':savedForm, 'tags': request.POST.get('tags'), 'commit_message': request.POST.get('commit_message')}
                 request.session['ScraperDraft'] = draft_session_scraper
 
                 # Set a message with django_notify telling the user their scraper is safe
