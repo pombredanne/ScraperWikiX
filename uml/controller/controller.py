@@ -587,7 +587,7 @@ class BaseController (BaseHTTPServer.BaseHTTPRequestHandler) :
             ostimes1   = os.times ()
             cltime1    = time.time()
             mod        = imp.new_module ('scraper')
-            exec code.rstrip() in mod.__dict__
+            exec code.rstrip() + "\n" in mod.__dict__
             ostimes2   = os.times ()
             cltime2    = time.time()
             try    :
