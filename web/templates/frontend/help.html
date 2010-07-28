@@ -27,9 +27,7 @@
             <li><a href="#licence">Who owns the code I write on ScraperWiki?</a></li>                                        
             <li><a href="#data_ownership">Who owns the data in ScraperWiki?</a></li>                                
             <li><a href="#data_types">What sort of data can/can't I scrape?</a></li>   
-            {#
             <li><a href="#source_code">Can I get a copy of the ScraperWiki source code?</a></li>
-            #}
             <li><strong>Everything else</strong></li>                                     
             <li><a href="#security">How secure is your system? Can I try to break it?</a></li>
             <li><a href="#contact">How do I get in touch with you?</a></li>
@@ -72,7 +70,7 @@
 
             <dd>
                 <p>
-                We only support Python at the moment, but will be adding more languages soon on the basis of who <a href="/contact/">shouts loudest</a>.
+                We support Python and PHP at the moment, but will be adding more languages soon on the basis of who <a href="/contact/">shouts loudest</a>.
                 </p>
             </dd>
             <dt id="libraries">What libraries are available?</dt>
@@ -158,18 +156,16 @@
                 </p>
             </dd>
 
-            {#
             <dt id="source_code">Can I get a copy of the ScraperWiki source code?</dt>
 
             <dd>
                  <p>Yes, the source code for the ScraperWiki site is available under the GNU Affero General Public License. You can download a copy of the source code <a href="{{MEDIA_URL}}src/scraperwiki.tar.gz">here</a>.</p>
             </dd>
-            #}
 
             <dt id="security">How secure is your system? Can I try to break it?</dt>
 
             <dd>
-                <p>The code you write runs in a separate sandboxed system with controlled resources. If you try to write malicious code (<span class="code">while 1=1</span>, that kind of thing) you'll just be breaking your own scraper and annoying people, so please don't.
+                <p>The code you write runs in a separate sandboxed system with controlled resources. If you try to write malicious code (<span class="code">while True:</span>, that kind of thing) you'll just be breaking your own scraper and annoying people, so please don't.
                 </p>
             </dd>
 
