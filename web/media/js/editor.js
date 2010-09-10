@@ -1,7 +1,7 @@
 $(document).ready(function() {
 
     //variables
-    var pageIsDirty = false;
+    var pageIsDirty = true;
     var editor_id = 'id_code';
     var codeeditor;
     var codemirroriframe; // the iframe that needs resizing
@@ -42,6 +42,16 @@ $(document).ready(function() {
     setupDetailsForm();
     setupResizeEvents();
 
+    function setPageIsDirty(lpageIsDirty) {
+        if (pageIsDirty == lpageIsDirty)
+            return; 
+        pageIsDirty = lpageIsDirty; 
+        if (pageIsDirty && guid)
+            $('#aCloseEditor1').css("font-style", "italic"); 
+        else
+            $('#aCloseEditor1').css("font-style", "normal"); 
+    }
+
     //setup code editor
     function setupCodeEditor(){
         var parsers = Array();
@@ -70,9 +80,7 @@ $(document).ready(function() {
             autoMatchParens: true,
             width: '100%',
             parserConfig: {'pythonVersion': 2, 'strictErrors': true},
-            onChange: function (){
-                pageIsDirty = true; // note that code has changed
-            },
+            onChange: function ()  { setPageIsDirty(true); },
 
             // this is called once the codemirror window has finished initializing itself
             initCallback: function() {
@@ -80,7 +88,7 @@ $(document).ready(function() {
                     codemirroriframeheightdiff = codemirroriframe.height() - $("#codeeditordiv").height(); 
                     setupKeygrabs();
                     resizeControls('up');
-                    pageIsDirty = false; // page not dirty at this point
+                    setPageIsDirty(false); // page not dirty at this point
                     
                 } 
           });        
@@ -475,6 +483,10 @@ $(document).ready(function() {
 
         // the rest of the activity happens in startingrun when we get the startingrun message come back from twisted
         // means we can have simultaneous running for staff overview
+
+        // new auto-save every time 
+        if (guid && $('#autosavecheck').attr('checked') && pageIsDirty)
+            saveScraper(); 
     }
 
     function startingrun(content) {
@@ -569,7 +581,7 @@ $(document).ready(function() {
 
         codeeditor.setCode(newcode); // see setupTutorial() for way to leave control-Z in place
         codeeditor.focus(); 
-        pageIsDirty = false; 
+        setPageIsDirty(false); 
 
         // make the selection
         if (!((selrange[2] == 0) && (selrange[3] == 0))){
@@ -632,8 +644,7 @@ $(document).ready(function() {
         );
 
         //close editor link
-
-        $('#aCloseEditor, .page_tabs a').click(
+        $('#aCloseEditor, #aCloseEditor1, .page_tabs a').click(
             function (){
                 var bReturn = true;
                 if (pageIsDirty){
@@ -651,7 +662,7 @@ $(document).ready(function() {
     function saveScraper(){
         var bSuccess = false;
 
-        //if saving then check if the title is set
+        //if saving then check if the title is set (must be if guid is set)
         if(shortNameIsSet() == false){
             var sResult = jQuery.trim(prompt('Please enter a title for your scraper'));
 
@@ -670,6 +681,8 @@ $(document).ready(function() {
               type : 'POST',
               contentType : "application/json",
               URL : window.location.pathname,
+
+              // many of these should go, eg commaseparatedtags, license, etc.
               data: ({
                 title : $('#id_title').val(),
                 commaseparatedtags : $('#id_commaseparatedtags').val(),
@@ -682,6 +695,7 @@ $(document).ready(function() {
                 code : codeeditor.getCode(),
                 action : 'commit'
                 }),
+
               dataType: "html",
               success: function(response){
                     res = $.evalJSON(response);
@@ -690,27 +704,29 @@ $(document).ready(function() {
                     if (res.status == 'Failed'){
                         $('#meta_form .popup_error').show();
                         $('#meta_form .popup_error').html("Failed to save, please make sure you have entered a title, a description and a commit message");
+
                     //success    
                     }else{
                         pageTracker._trackPageview('/scraper_committed_goal');  		
 
+                        // 'A temporary version of your scraper has been saved. To save it permanently you need to log in'
                         if (res.draft == 'True') {
                             $('#divDraftSavedWarning').show();
                         }
 
-                        // redirect somewhere
+                        // server returned a different URL for the new scraper that has been created.  Now go to it (and reload)
                         if (res.url && window.location.pathname != res.url) {
                             window.location = res.url;
                         };
 
+                        // orginary save case.  show the slider up that it has been saved
                         if (res.draft != 'True') {
                             showFeedbackMessage("Your code has been saved.");
-                    
                             if (bConnected){
                                 send({"command":'saved'}); 
                             }
                         }
-                        pageIsDirty = false; // page no longer dirty
+                        setPageIsDirty(false); 
                     }
                 },
 
