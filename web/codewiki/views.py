@@ -70,14 +70,12 @@ def scraper_overview(request, scraper_short_name):
                                                private_columns=private_columns)
 
     # replicates output from data_summary_tables
-    has_data = len(data['rows']) > 0
     return render_to_response('codewiki/scraper_overview.html', {
         'scraper_tags': scraper_tags,
         'selected_tab': 'overview',
         'scraper': scraper,
         'user_owns_it': user_owns_it,
         'user_follows_it': user_follows_it,
-        'has_data': has_data,
         'data': data,
         'scraper_contributors': scraper_contributors,
         'related_views': related_views,
@@ -608,10 +606,15 @@ def raw(request, short_name=None):
 #save a code object
 def save_code(code_object, user, code_text, earliesteditor, commitmessage):
 
-    # save the actual object to mySQL
-    code_object.update_meta()
     code_object.line_count = int(code_text.count("\n"))
-    code_object.save()   
+    
+    # perhaps the base class should call the upper class updates, not the other way round
+    if code_object.wiki_type == "scraper":
+        code_object.scraper.update_meta()
+        code_object.scraper.save()
+    else:
+        code_object.update_meta()
+        code_object.save()   
 
     # save code and commit code through the mercurialinterface
     lcommitmessage = earliesteditor and ("%s|||%s" % (earliesteditor, commitmessage)) or commitmessage
@@ -648,7 +651,6 @@ def handle_session_draft(request, action):
     draft_scraper.save()
     #draft_commit_message = action.startswith('commit') and session_scraper_draft.get('commit_message') or None
     draft_code = session_scraper_draft.get('code')
-    #draft_tags = session_scraper_draft.get('commaseparatedtags', '')
 
     commitmessage = request.POST.get('commit_message', "")
     earliesteditor = request.POST.get('earliesteditor', "")
@@ -666,7 +668,7 @@ def handle_session_draft(request, action):
 # called from the edit function
 def saveeditedscraper(request, lscraper):
     form = forms.editorForm(request.POST, instance=lscraper)
-
+    
     #validate
     if not form.is_valid() or 'action' not in request.POST:
         return HttpResponse(json.dumps({'status' : 'Failed'}))
@@ -699,7 +701,7 @@ def saveeditedscraper(request, lscraper):
 
     # User is not logged in, save the scraper to the session
     else:
-        draft_session_scraper = { 'scraper':scraper, 'code':code, 'commaseparatedtags': request.POST.get('commaseparatedtags'), 'commit_message': request.POST.get('commit_message')}
+        draft_session_scraper = { 'scraper':scraper, 'code':code, 'commit_message': request.POST.get('commit_message')}
         request.session['ScraperDraft'] = draft_session_scraper
 
         # Set a message with django_notify telling the user their scraper is safe
@@ -719,7 +721,6 @@ def saveeditedscraper(request, lscraper):
 
 #Editor form
 def edit(request, short_name='__new__', wiki_type='scraper', language='Python', tutorial_scraper=None):
-
     #return url (where to exit the editor to)
     return_url = reverse('frontpage')
 
@@ -733,7 +734,6 @@ def edit(request, short_name='__new__', wiki_type='scraper', language='Python', 
     commit_message = ''
     if has_draft:
         scraper = draft
-        commaseparatedtags = request.session['ScraperDraft'].get('commaseparatedtags', '')
         commit_message = request.session['ScraperDraft'].get('commit_message', '')        
         code = request.session['ScraperDraft'].get('code', ' missing')
 
@@ -742,7 +742,6 @@ def edit(request, short_name='__new__', wiki_type='scraper', language='Python', 
         scraper = get_object_or_404(models.Code, short_name=short_name)
         code = scraper.saved_code()
         return_url = reverse('code_overview', args=[scraper.wiki_type, scraper.short_name])
-        #!commaseparatedtags = ", ".join([tag.name for tag in scraper.tags])
         if not scraper.published:
             commit_message = 'Scraper created'
 
@@ -776,8 +775,8 @@ def edit(request, short_name='__new__', wiki_type='scraper', language='Python', 
 
         scraper.language = language
         code = startupcode
-        commaseparatedtags = ''
 
+    
     # if it's a post-back (save) then execute that
     if request.POST:
         return saveeditedscraper(request, scraper)
@@ -785,7 +784,6 @@ def edit(request, short_name='__new__', wiki_type='scraper', language='Python', 
         # Else build the page
         form = forms.editorForm(instance=scraper)
         form.fields['code'].initial = code
-        #form.fields['commaseparatedtags'].initial = commaseparatedtags 
 
         tutorial_scrapers = models.Code.objects.filter(published=True, istutorial=True, language=language).order_by('first_published_at')
 
