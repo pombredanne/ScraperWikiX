@@ -3,9 +3,10 @@ $(document).ready(function() {
     //variables
     var pageIsDirty = true;
     var editor_id = 'id_code';
-    var codeeditor;
+    var codeeditor = undefined;
     var codemirroriframe; // the iframe that needs resizing
-    var codemirroriframeheightdiff; // the difference in pixels between the iframe and the div that is resized; usually 0 (check)
+    var codemirroriframeheightdiff = 0; // the difference in pixels between the iframe and the div that is resized; usually 0 (check)
+    var codemirroriframewidthdiff = 0;  // the difference in pixels between the iframe and the div that is resized; usually 0 (check)
     var previouscodeeditorheight = 0; //$("#codeeditordiv").height() * 3/5;    // saved for the double-clicking on the drag bar
     var short_name = $('#scraper_short_name').val();
     var guid = $('#scraper_guid').val();
@@ -18,7 +19,7 @@ $(document).ready(function() {
     var wiki_type = $('#id_wiki_type').val(); 
     var viewrunurl = $('#viewrunurl').val(); 
     var activepreviewiframe = undefined; // used for spooling running console data into the preview popup
-    var conn; // Orbited connection
+    var conn = undefined; // Orbited connection
     var bConnected = false; 
     var bSuppressDisconnectionMessages = false; 
     var buffer = "";
@@ -114,12 +115,14 @@ $(document).ready(function() {
             autoMatchParens: true,
             width: '100%',
             parserConfig: parserConfig[scraperlanguage],
+            enterMode: "flat", // default is "indent" (which I have found buggy),  also can be "keep"
             onChange: function ()  { setPageIsDirty(true); },
 
             // this is called once the codemirror window has finished initializing itself
             initCallback: function() {
                     codemirroriframe = codeeditor.frame // $("#id_code").next().children(":first"); (the object is now a HTMLIFrameElement so you have to set the height as an attribute rather than a function)
                     codemirroriframeheightdiff = codemirroriframe.height - $("#codeeditordiv").height(); 
+                    codemirroriframewidthdiff = codemirroriframe.width - $("#codeeditordiv").width(); 
                     setupKeygrabs();
                     resizeControls('first');
                     setPageIsDirty(false); // page not dirty at this point
@@ -166,9 +169,11 @@ $(document).ready(function() {
         $('#chat_line').bind('keypress', function(eventObject) {
             var key = eventObject.charCode ? eventObject.charCode : eventObject.keyCode ? eventObject.keyCode : 0;
             var target = eventObject.target.tagName.toLowerCase();
-            if (key === 13 && target === 'input') {
+            if (key === 13 && target === 'input') 
+            {
                 eventObject.preventDefault();
-                sendChat(); 
+                if (bConnected) 
+                    sendChat(); 
                 return false; 
             }
             return true; 
@@ -316,7 +321,7 @@ $(document).ready(function() {
                  "username":username, 
                  "userrealname":userrealname, 
                  "language":scraperlanguage, 
-                 "scraper-name":short_name, 
+                 "scrapername":short_name, 
                  "isstaff":isstaff };
         send(data);
     }
@@ -1126,6 +1131,8 @@ $(document).ready(function() {
       if (codemirroriframe){
           //resize the iFrame inside the editor wrapping div
           codemirroriframe.height = (($("#codeeditordiv").height() + codemirroriframeheightdiff) + 'px');
+          codemirroriframe.width = (($("#codeeditordiv").width() + codemirroriframewidthdiff) + 'px');
+
           //resize the output area so the console scrolls correclty
           iWindowHeight = $(window).height();
           iEditorHeight = $("#codeeditordiv").height();
@@ -1136,7 +1143,7 @@ $(document).ready(function() {
           $("#outputeditordiv").height(iOutputEditorDiv + 'px');   
           //$("#outputeditordiv .info").height($("#outputeditordiv").height() - parseInt($("#outputeditordiv .info").position().top) + 'px');
           $("#outputeditordiv .info").height((iOutputEditorDiv - iOutputEditorTabs) + 'px');
-//iOutputEditorTabs
+          //iOutputEditorTabs
       }
     };
     
