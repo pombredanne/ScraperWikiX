@@ -36,8 +36,6 @@ try:
 except:
   import simplejson as json
 
-from zope.interface import implements
-
 from twisted.internet import protocol, utils, reactor, task
 
 # for calling back to the scrapers/twister/status
@@ -47,11 +45,6 @@ from twisted.web.iweb import IBodyProducer
 from twisted.internet.defer import succeed
 
 agent = Agent(reactor)
-
-
-# perhaps in-line this
-def format_message(content, message_type='console'):
-    return json.dumps({'message_type' : message_type, 'content' : content})
 
 
 class spawnRunner(protocol.ProcessProtocol):
@@ -102,72 +95,87 @@ class RunnerProtocol(protocol.Protocol):
         self.username = ""
         self.userrealname = ""
         self.chatname = ""
-        self.cchatname = ""            # combined version delimited with | for sending to umlmonitor
+        self.cchatname = ""            # combined real/chatname version delimited with | for sending to umlmonitor
         self.clientnumber = -1         # number for whole operation of twisted
-        self.scrapereditornumber = -1  # number out of all people editing a particular scraper
-        self.earliesteditor = datetime.datetime.now()  # used to group together everything in one editing session
+        self.clientsessionbegan = datetime.datetime.now()
         self.guidclienteditors = None  # the EditorsOnOneScraper object
-        self.isdraft = False           # true when not autosave or autoload
+        self.automode = ''             # true when not autosave or autoload mode
         
     def connectionMade(self):
         self.factory.clientConnectionMade(self)
         # we don't know what scraper they've actually opened until we get the dataReceived
         
-    
     # messages from the client
     def dataReceived(self, data):
         try:
             parsed_data = json.loads(data)
+        except ValueError:
+            self.writejson({'content':"Command not json parsable:  %s " % data, 'message_type':'console'})
+            return
             
-            # data uploaded when a new connection is made from the editor
-            if parsed_data['command'] == 'connection_open':
-                self.connectionopen(parsed_data)
+        command = parsed_data.get('command')
+        
+        # data uploaded when a new connection is made from the editor
+        if command == 'connection_open':
+            self.connectionopen(parsed_data)
             
-            elif parsed_data['command'] == 'saved':
-                line = json.dumps({'message_type' : "saved", 'content' : "%s saved" % self.chatname})
-                otherline = json.dumps({'message_type' : "othersaved", 'content' : "%s saved" % self.chatname})
-                self.writeall(line, otherline)
-                self.factory.notifyMonitoringClientsSave(self)
+        elif command == 'saved':
+            line = json.dumps({'message_type' : "saved", 'content' : "%s saved" % self.chatname})
+            otherline = json.dumps({'message_type' : "othersaved", 'content' : "%s saved" % self.chatname})
+            self.writeall(line, otherline)
+            self.factory.notifyMonitoringClientsSave(self)
+        
+        elif command == 'run' and not self.running:
+            self.runcode(parsed_data)
+        
+        elif command == "kill":
+            # Kill the running process (or other if staff)
+            if self.running:
+                self.kill_run()
             
-            elif parsed_data['command'] == 'run' and not self.running:
-                if 'code' in parsed_data:
-                    self.runcode(parsed_data)
-                else:
-                    raise ValueError('++?????++ Out of Cheese Error. Redo From Start: `code` to run not specified')
-            
-            elif parsed_data['command'] == "kill":
-                # Kill the running process (or other if staff)
-                if self.running:
-                    self.kill_run()
-                
-                # case of someone who didn't click run, invokes kill
-                # this really needs to be done through the EditorsOnOneScraper structure 
-                # once we have established a firmer foundation for running things yoked.  
-                # anonymous users who don't want to play this game could preferably derive a 
-                # draft scraper from this as a template to that they are fully independent.
-                # Unlikely use case of editing and running without cooperation, and then 
-                # being able to commit without serious code clashing issues.  
-                else:
-                    for client in self.factory.clients:
-                        if client.guid == self.guid and client.running:
-                            client.kill_run()
+            else:
+                for client in self.factory.clients:
+                    if client.guid == self.guid and client.running:
+                        client.kill_run()
 
-            elif parsed_data['command'] == 'chat':
-                message = "%s: %s" % (self.chatname, parsed_data['text'])
-                self.writeall(format_message(message, message_type='chat'))
+        elif command == 'chat':
+            message = "%s: %s" % (self.chatname, parsed_data.get('text'))
+            line = json.dumps({'content':message, 'message_type':'chat'})
+            self.writeall(line)
         
-            # this message helps kill it better and killing it from the browser end
-            elif parsed_data['command'] == 'loseconnection':
-                self.transport.loseConnection()
+        elif command == 'automode':
+            automode = parsed_data.get('automode')
+            if automode == self.automode:
+                return
+            
+            if not self.username:
+                self.automode = automode
+                self.factory.notifyMonitoringClients(self)
+                return
+
+            usereditor = self.guidclienteditors.usereditormap[self.username]
+            if automode == 'draft':
+                usereditor.nondraftcount -= 1
+            elif self.automode == 'draft':  # change back from draft (won't happen for now)
+                usereditor.nondraftcount += 1
+            self.automode = automode
+            assert usereditor.nondraftcount == len([lclient  for lclient in usereditor.userclients  if lclient.automode != 'draft'])
+            
+            self.guidclienteditors.notifyEditorClients("")
+            self.factory.notifyMonitoringClients(self)
+
+        # this message helps kill it better and killing it from the browser end
+        elif command == 'loseconnection':
+            self.transport.loseConnection()
         
-        except Exception, e:
-            self.transport.write(format_message("Command not valid (%s)  %s " % (e, data)))
 
     
     # message to the client
-    def write(self, line, formatted=True):
+    def writeline(self, line):
         self.transport.write(line+",\r\n")  # note the comma added to the end for json parsing when strung together
     
+    def writejson(self, data):
+        self.writeline(json.dumps(data))
     
     def connectionLost(self, reason):
         if self.running:
@@ -176,20 +184,20 @@ class RunnerProtocol(protocol.Protocol):
 
     def writeall(self, line, otherline=""):
         if line: 
-            self.write(line)  
+            self.writeline(line)  
         
         if self.guidclienteditors:
             if not otherline:
                 otherline = line
             
             for client in self.guidclienteditors.anonymouseditors:
-                if client != self:
-                    client.write(otherline); 
+                if client != self and client.automode != 'draft':
+                    client.writeline(otherline); 
             
             for usereditor in self.guidclienteditors.usereditormap.values():
                 for client in usereditor.userclients:
-                    if client != self:
-                        client.write(otherline); 
+                    if client != self and client.automode != 'draft':
+                        client.writeline(otherline); 
         else:
             assert not self.guid
             
@@ -206,11 +214,11 @@ class RunnerProtocol(protocol.Protocol):
             pass
 
     def runcode(self, parsed_data):
-        code = parsed_data['code']
+        code = parsed_data.get('code', '')
         code = code.encode('utf8')
         
         # these could all be fetched from self
-        guid = parsed_data['guid']
+        guid = parsed_data.get('guid', '')
         scraperlanguage = parsed_data.get('language', 'python')
         scrapername = parsed_data.get('scrapername', '')
         scraperlanguage = parsed_data.get('language', '')
@@ -227,11 +235,12 @@ class RunnerProtocol(protocol.Protocol):
 
         # from here we should somehow get the runid
         self.running = reactor.spawnProcess(spawnRunner(self, code), './firestarter/runner.py', args, env={'PYTHON_EGG_CACHE' : '/tmp'})
-        self.writeall(format_message("%s runs scraper" % self.chatname, message_type='chat'))
+        line = json.dumps({'content':"%s runs scraper" % self.chatname, 'message_type':'chat'})
+        self.writeall(line)
         self.factory.notifyMonitoringClients(self)
 
 
-    # message from the client via dataReceived
+    # message from the clientclientsessionbegan via dataReceived
     def connectionopen(self, parsed_data):
         self.guid = parsed_data.get('guid', '')
         self.username = parsed_data.get('username', '')
@@ -254,16 +263,27 @@ class UserEditorsOnOneScraper:
     def __init__(self, client):
         self.username = client.username
         self.userclients = [ ]
+        self.usersessionbegan = None
+        self.nondraftcount = 0
         self.AddUserClient(client)
     
     def AddUserClient(self, client):
         assert self.username == client.username
+        if not self.userclients:
+            assert not self.usersessionbegan
+            self.usersessionbegan = client.clientsessionbegan
+        if client.automode != 'draft':
+            self.nondraftcount += 1
         self.userclients.append(client)
+        assert self.nondraftcount == len([lclient  for lclient in self.userclients  if lclient.automode != 'draft'])
         
     def RemoveUserClient(self, client):
         assert self.username == client.username
         assert client in self.userclients
         self.userclients.remove(client)
+        if client.automode != 'draft':
+            self.nondraftcount -= 1
+        assert self.nondraftcount == len([lclient  for lclient in self.userclients  if lclient.automode != 'draft'])
         return len(self.userclients)
         
         
@@ -272,26 +292,26 @@ class EditorsOnOneScraper:
         self.guid = guid
         self.scrapername = scrapername
         self.scraperlanguage = scraperlanguage
-        self.sessionstarts = datetime.datetime.now()  # replaces earliesteditor
-        self.editinguser = ""
+        self.scrapersessionbegan = None
         self.anonymouseditors = [ ]
         self.usereditormap = { }  # maps username to UserEditorsOnOneScraper
         
     def AddClient(self, client):
         assert client.guid == self.guid
-        client.guidclienteditors = self
-        client.earliesteditor = self.sessionstarts
         
+        if not self.anonymouseditors and not self.usereditormap:
+            assert not self.scrapersessionbegan
+            self.scrapersessionbegan = client.clientsessionbegan
+
         if client.username:
             if client.username in self.usereditormap:
                 self.usereditormap[client.username].AddUserClient(client)
             else:
                 self.usereditormap[client.username] = UserEditorsOnOneScraper(client)
-                if not self.editinguser:
-                    self.editinguser = client.username
         else:
             self.anonymouseditors.append(client)
-        self.notifyEditorClients("%s enters" % client.chatname)
+        
+        client.guidclienteditors = self
         
     def RemoveClient(self, client):
         assert client.guid == self.guid
@@ -302,31 +322,30 @@ class EditorsOnOneScraper:
             assert client.username in self.usereditormap
             if not self.usereditormap[client.username].RemoveUserClient(client):
                 del self.usereditormap[client.username]
-                if self.editinguser == client.username:
-                    self.editinguser = ''
-                    if self.usereditormap:
-                        self.editinguser = self.usereditormap.keys()[0]
         else:
             assert client in self.anonymouseditors
             self.anonymouseditors.remove(client)
-        self.notifyEditorClients("%s leaves" % client.chatname)
         return self.usereditormap or self.anonymouseditors
         
         
     def notifyEditorClients(self, message):
-        editorstatusdata = {'message_type':"editorstatus", 'earliesteditor':self.sessionstarts.isoformat(), "editinguser":self.editinguser, "cansave":False}; 
-        editorstatusdata["loggedineditors"] = self.usereditormap.keys()
+        editorstatusdata = {'message_type':"editorstatus", 'earliesteditor':self.scrapersessionbegan.isoformat()}; 
+        
+        # order is important to determin who is the editor
+        usereditors = [ usereditor  for usereditor in self.usereditormap.values()  if usereditor.nondraftcount ]
+        usereditors.sort(key=lambda x: x.usersessionbegan)
+        editorstatusdata["loggedineditors"] = [ usereditor.username  for usereditor in usereditors ]
+        
         editorstatusdata["nanonymouseditors"] = len(self.anonymouseditors)
         editorstatusdata["message"] = message
         for client in self.anonymouseditors:
             editorstatusdata["chatname"] = client.chatname
-            client.write(json.dumps(editorstatusdata)); 
+            client.writejson(editorstatusdata); 
         
         for usereditor in self.usereditormap.values():
-            editorstatusdata["cansave"] = (usereditor.username == self.editinguser)
             for client in usereditor.userclients:
                 editorstatusdata["chatname"] = client.chatname
-                client.write(json.dumps(editorstatusdata)) 
+                client.writejson(editorstatusdata) 
     
     def Dcountclients(self):
         return len(self.anonymouseditors) + sum([len(usereditor.userclients)  for usereditor in self.usereditormap.values()])
@@ -363,12 +382,12 @@ class RunnerFactory(protocol.ServerFactory):
             for c in self.clients:
                 res.append(c == client and "T" or "-")
                 res.append(c.running and "R" or ".")
-            client.write(format_message("%d c %d clients, running:%s" % (self.announcecount, len(self.clients), "".join(res)), message_type='chat'))
+            client.writejson({'content':"%d c %d clients, running:%s" % (self.announcecount, len(self.clients), "".join(res)), 'message_type':'chat'})
 
 
         
     # throw in the kitchen sink to get the features.  optimize for changes later
-    def notifyMonitoringClients(self, cclient):
+    def notifyMonitoringClients(self, cclient):  # cclient is the one whose state has changed (it can be normal editor or a umlmonitoring case)
         assert len(self.clients) == len(self.umlmonitoringclients) + len(self.draftscraperclients) + sum([eoos.Dcountclients()  for eoos in self.guidclientmap.values()])
         
         # both of these are in the same format and read the same, but changes are shorter
@@ -396,70 +415,94 @@ class RunnerFactory(protocol.ServerFactory):
         
         # the complexity here reflects the complexity of the structure.  the running flag could be set on any one of the clients
         def scraperentry(eoos, cclient):  # local function
-            scrapereditors = set()
+            scrapereditors = [ ]
+            scraperdrafteditors = [ ]
             running = False
             
             for usereditor in eoos.usereditormap.values():
-                scrapereditors.add(usereditor.userclients[0].cchatname)
+                if usereditor.nondraftcount != 0:
+                    scrapereditors.append(usereditor.userclients[0].cchatname)
+                else:
+                    scraperdrafteditors.append(usereditor.userclients[0].cchatname)
+                    
                 for uclient in usereditor.userclients:
                     running = running or bool(uclient.running)
-            for uclient in eoos.anonymouseditors:
-                scrapereditors.add(uclient.cchatname)
-                running = running or bool(uclient.running)
-            if cclient:
-                scraperusers = [ ( cclient.cchatname, (cclient.cchatname in scrapereditors)) ]
-            else:
-                scraperusers = [ (cchatname, True)  for cchatname in scrapereditors ]
             
-            return (eoos.scrapername, True, running, scraperusers)
+            for uclient in eoos.anonymouseditors:
+                if uclient.automode != 'draft': 
+                    scrapereditors.append(uclient.cchatname)
+                else:
+                    scraperdrafteditors.append(uclient.cchatname)
+                running = running or bool(uclient.running)
+            
+            ### scraperdrafteditors
+            if cclient:
+                scraperusers = [ {'chatname':cclient.cchatname, 'present':(cclient.cchatname in scrapereditors)} ]
+            else:
+                scraperusers = [ {'chatname':cchatname, 'present':True}  for cchatname in scrapereditors ]
+            
+            return {'scrapername':eoos.scrapername, 'present':True, 'running':running, 'scraperusers':scraperusers}
         
         if umlstatusdata:
             umlstatusdata["scraperentries"] = [ ]
             for eoos in self.guidclientmap.values():
                 umlstatusdata["scraperentries"].append(scraperentry(eoos, None))
+                
         if cclient.guid:
             if cclient.guid in self.guidclientmap:
                 umlstatuschanges["scraperentries"] = [ scraperentry(self.guidclientmap[cclient.guid], cclient) ]
             else:
-                umlstatuschanges["scraperentries"] = [ (cclient.scrapername, False, False, [ ]) ]
+                umlstatuschanges["scraperentries"] = [ { 'scrapername':cclient.scrapername, 'present':False, 'running':False, 'scraperusers':[ ] } ]
         
         
         # send the status to the target and updates to everyone else who is monitoring
+        
+        # new monitoring client
         if cclient.isumlmonitoring:
-            cclient.write(json.dumps(umlstatusdata)) 
+            cclient.writejson(umlstatusdata) 
+        
+        # send only updates to current clients
         for client in self.umlmonitoringclients:
             if client != cclient:
-                client.write(json.dumps(umlstatuschanges)) 
+                client.writejson(umlstatuschanges) 
 
     # just a signal sent for the latest event
     def notifyMonitoringClientsSave(self, cclient):
         if cclient.guid:
             umlsavenotification = {'message_type':"umlsavenote", "scrapername":cclient.scrapername, "cchatname":cclient.cchatname }
             for client in self.umlmonitoringclients:
-                client.write(json.dumps(umlsavenotification)) 
+                client.writejson(umlsavenotification) 
             
 
     def clientConnectionMade(self, client):
         client.clientnumber = self.clientcount
         self.clients.append(client)
         self.clientcount += 1
-        # will call next function when some actual data gets sent
+            # next function will be called when some actual data gets sent
 
     def clientConnectionRegistered(self, client):
         if client.isumlmonitoring:
             self.umlmonitoringclients.append(client)
             
-        elif not client.guid:   # draft scraper type
-            editorstatusdata = {'message_type':"editorstatus", "cansave":True, "loggedineditors":[], "nanonymouseditors":1, 
-                                "editinguser":client.username, "chatname":client.chatname, "message":"Draft scraper connection"} 
-            client.write(json.dumps(editorstatusdata)); 
-            self.draftscraperclients.append(client)
-        
-        else:
+        elif client.guid:
             if client.guid not in self.guidclientmap:
                 self.guidclientmap[client.guid] = EditorsOnOneScraper(client.guid, client.scrapername, client.scraperlanguage)
+            
+            if client.username in self.guidclientmap[client.guid].usereditormap:
+                message = "%s opens another window" % client.chatname
+            else:
+                message = "%s enters" % client.chatname
+            
             self.guidclientmap[client.guid].AddClient(client)
+            self.guidclientmap[client.guid].notifyEditorClients(message)
 
+        else:   # draft scraper type
+            editorstatusdata = {'message_type':"editorstatus", "loggedineditors":[], "nanonymouseditors":1, 
+                                "chatname":client.chatname, "message":"Draft scraper connection"} 
+            client.writejson(editorstatusdata); 
+            self.draftscraperclients.append(client)
+        
+        
         # check that all clients are accounted for
         assert len(self.clients) == len(self.umlmonitoringclients) + len(self.draftscraperclients) + sum([eoos.Dcountclients()  for eoos in self.guidclientmap.values()])
         self.notifyMonitoringClients(client)
@@ -477,6 +520,12 @@ class RunnerFactory(protocol.ServerFactory):
         elif (client.guid in self.guidclientmap):   
             if not self.guidclientmap[client.guid].RemoveClient(client):
                 del self.guidclientmap[client.guid]
+            else:
+                if client.username in self.guidclientmap[client.guid].usereditormap:
+                    message = "%s closes a window" % client.chatname
+                else:
+                    message = "%s leaves" % client.chatname
+                self.guidclientmap[client.guid].notifyEditorClients(message)
         else:
             pass  # shouldn't happen
         
