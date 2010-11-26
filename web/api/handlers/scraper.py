@@ -1,4 +1,4 @@
-from web.codewiki.models import Scraper
+from web.codewiki.models import Scraper, ScraperRunEvent
 from django.contrib.auth.models import User
 from api.handlers.api_base import APIBase
 from tagging.models import Tag
@@ -42,6 +42,7 @@ class GetInfo(APIBase):
         info['title']       = scraper.title
         info['description'] = scraper.description
         info['tags']        = [tag.name for tag in Tag.objects.get_for_object(scraper)]
+        info['wiki_type']   = scraper.wiki_type
         if scraper.wiki_type == 'scraper':
             info['license']     = scraper.scraper.license
             info['records']     = scraper.scraper.record_count
@@ -104,7 +105,15 @@ class GetRunInfo(APIBase):
             except ValueError:
                 pass
         if not runevent:
-            runevent = scraper.scraper.scraperrunevent_set.get(run_id=runid)
+            try:
+                runevent = scraper.scraper.scraperrunevent_set.get(run_id=runid)
+            except ScraperRunEvent.DoesNotExist:
+                error_response = rc.NOT_FOUND
+                error_response.write(": Run object not found")
+                return error_response
+
+            
+            
             
         info = { "runid":runevent.run_id, "run_started":runevent.run_started, 
                  "records_produced":runevent.records_produced, "pages_scraped":runevent.pages_scraped, 
