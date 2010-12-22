@@ -89,7 +89,7 @@ class RunnerProtocol(protocol.Protocol):
         self.clientsessionbegan = datetime.datetime.now()
         self.clientlasttouch = self.clientsessionbegan
         self.guidclienteditors = None  # the EditorsOnOneScraper object
-        self.automode = 'autosave'     # draft, autosave, autoload
+        self.automode = 'autosave'     # draft, autosave, autoload, autotype
         
     def connectionMade(self):
         self.factory.clientConnectionMade(self)
@@ -105,12 +105,13 @@ class RunnerProtocol(protocol.Protocol):
             
         command = parsed_data.get('command')
         
-        # touch all the relevent systems
-        self.clientlasttouch = datetime.datetime.now()
-        if self.guid and self.automode != 'draft' and self.username:
-            assert self.username in self.guidclienteditors.usereditormap
-            self.guidclienteditors.usereditormap[self.username].userlasttouch = self.clientlasttouch
-            self.guidclienteditors.scraperlasttouch = self.clientlasttouch
+        # update the lasttouch values on associated aggregations
+        if command != 'automode':
+            self.clientlasttouch = datetime.datetime.now()
+            if self.guid and self.automode != 'draft' and self.username:
+                assert self.username in self.guidclienteditors.usereditormap
+                self.guidclienteditors.usereditormap[self.username].userlasttouch = self.clientlasttouch
+                self.guidclienteditors.scraperlasttouch = self.clientlasttouch
 
         # data uploaded when a new connection is made from the editor
         if command == 'connection_open':
@@ -121,12 +122,20 @@ class RunnerProtocol(protocol.Protocol):
             otherline = json.dumps({'message_type' : "othersaved", 'content' : "%s saved" % self.chatname})
             self.writeall(line, otherline)
             self.factory.notifyMonitoringClientsSave(self)
-        
+
+
+    # this signal needs to be more organized, esp to send out the the monitoring users to update the activity
+    # and find a way for showing to watching users if anything at all is going on in the last hour
+    # Long term inactivity will be the trigger that allows someone else to grab the editorship from another user.  
         elif command == 'typing':
-            line = json.dumps({'message_type' : "typing", 'content' : "%s typing" % self.chatname})
-            otherline = json.dumps({'message_type' : "othertyping", 'content' : "%s typing" % self.chatname})
-            self.writeall(line, otherline)
-        
+            jline = {'message_type' : "typing", 'content' : "%s typing" % self.chatname}
+            jotherline = {'message_type' : "othertyping", 'content' : "%s typing" % self.chatname}
+            if "insertlinenumber" in parsed_data:
+                jotherline["insertlinenumber"] = parsed_data["insertlinenumber"]
+                jotherline["deletions"] = parsed_data["deletions"]
+                jotherline["insertions"] = parsed_data["insertions"]
+            self.writeall(json.dumps(jline), json.dumps(jotherline))
+            
         elif command == 'run':
             if self.processrunning:
                 self.writejson({'content':"Already running! (shouldn't happen)", 'message_type':'console'}); 
@@ -280,6 +289,9 @@ class UserEditorsOnOneScraper:
         self.userclients = [ ]
         self.usersessionbegan = None
         self.nondraftcount = 0
+                # need another value to mark which are the watchers and which are the editors (or derive this)
+                # the states are enacted by the browser (by changing the dropdown or allowing user to change the drop down)
+                # on the basis of the information supplied to it
         self.userlasttouch = datetime.datetime.now()
         self.AddUserClient(client)
     
@@ -398,6 +410,7 @@ class RunnerFactory(protocol.ServerFactory):
 
         
     # throw in the kitchen sink to get the features.  optimize for changes later
+    # should also allocate an automode (from among the windows that a scraper user has)
     def notifyMonitoringClients(self, cclient):  # cclient is the one whose state has changed (it can be normal editor or a umlmonitoring case)
         assert len(self.clients) == len(self.umlmonitoringclients) + len(self.draftscraperclients) + sum([eoos.Dcountclients()  for eoos in self.guidclientmap.values()])
         
@@ -424,7 +437,7 @@ class RunnerFactory(protocol.ServerFactory):
             umlstatuschanges["umlmonitoringusers"] = [ {"chatname":cclient.cchatname, "present":(cclient.cchatname in umlmonitoringusers), "lasttouch":cclient.clientlasttouch.isoformat() } ]
         
         # handle draft scraper users and the run states (one for each user, though there may be multiple draft scrapers for them)
-        draftscraperusers = { }
+        draftscraperusers = { }  # chatname -> running state
         for client in self.draftscraperclients:
             draftscraperusers[client.cchatname] = bool(client.processrunning) or draftscraperusers.get(client.cchatname, False)
         if umlstatusdata:
@@ -434,7 +447,7 @@ class RunnerFactory(protocol.ServerFactory):
         
         # the complexity here reflects the complexity of the structure.  the running flag could be set on any one of the clients
         def scraperentry(eoos, cclient):  # local function
-            scrapereditors = { }   # chatname to lasttouch
+            scrapereditors = { }   # chatname -> lasttouch
             scraperdrafteditors = [ ]
             running = False        # we could make this an updated member of EditorsOnOneScraper like lasttouch
             
