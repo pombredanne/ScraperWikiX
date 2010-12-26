@@ -1,4 +1,4 @@
-##!/bin/sh -
+#!/bin/sh -
 "exec" "python" "-O" "$0" "$@"
 
 __doc__ = """ScraperWiki HTTP Proxy"""
@@ -16,23 +16,26 @@ import  sys
 import  time
 import  threading
 import  string 
-import  urllib
+import  urllib   # should this be urllib2? -- JGT
 import  ConfigParser
 import  hashlib
+import  OpenSSL
+import  re
 
 global config
 
-USAGE       = " [--allowAll] [--varDir=dir] [--subproc] [--daemon] [--config=file] [--cacheDir=dir]"
+USAGE       = " [--uid=#] [--gid=#] [--allowAll] [--varDir=dir] [--subproc] [--daemon] [--config=file] [--useCache] [--mode=H|S|P]"
 child       = None
 config      = None
 varDir      = '/var'
-cacheDir    = None
+varName     = 'webproxy'
+useCache    = False
 uid         = None
 gid         = None
 allowAll    = False
+mode        = 'P'
 statusLock  = None
 statusInfo  = {}
-blockmsg    = """Scraperwiki has blocked you from accessing "%s" because it is not allowed according to the rules"""
 
 class HTTPProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
 
@@ -81,7 +84,7 @@ class HTTPProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
         BaseHTTPServer.BaseHTTPRequestHandler.log_message (self, format, *args)
         sys.stderr.flush ()
 
-    def hostAllowed (self, netloc, scraperID, runID) :
+    def hostAllowed (self, path, scraperID, runID) :
 
         """
         See if access to a specified host is allowed. These are specified as a list
@@ -89,8 +92,8 @@ class HTTPProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
         both start and finish so they must match the entire host. The file is named
         from the IP address of the caller.
 
-        @type   netloc   : String
-        @param  netloc   : Hostname
+        @type   path     : String
+        @param  path     : Hostname
         @type   scraperID: String
         @param  scraperID: Scraper identifier or None
         @return          : True if access is allowed
@@ -101,16 +104,23 @@ class HTTPProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
         if allowAll :
             return True
 
-        for block in self.m_blocked :
-            if re.match('^' + block + '$', netloc) :
-                return False
+        allowed = False
+        if re.match("http://127.0.0.1[/:]", path):
+            allowed = True
+        
+        # first if it is the white-list
         for allow in self.m_allowed :
-            if re.match('^' + allow + '$', netloc) :
-                return True
+            if re.match(allow, path) :
+                allowed = True
+        
+        # but not if it is in the black-list
+        for block in self.m_blocked :
+            if re.match(block, path) :
+                allowed = False
 
-        return False
+        return allowed
 
-    def _connect_to (self, netloc, soc) :
+    def _connect_to (self, scheme, netloc) :
 
         """
         Connect to host. If the connection fails then a 404 error will have been
@@ -118,14 +128,21 @@ class HTTPProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
 
         @type   netloc  : String
         @param  netloc  : Hostname or hostname:port
-        @type   soc : Socket
-        @param  soc : Socket on which to connect
-        @return         : True if connected
+        @return         : Socket
         """
 
         i = netloc.find(':')
         if i >= 0 : host_port = netloc[:i], int(netloc[i+1:])
-        else      : host_port = netloc, 80
+        else      : host_port = netloc, scheme == 'https' and 443 or 80
+
+        soc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        if scheme == 'https' :
+            try :
+                import ssl
+                soc = ssl.wrap_socket(soc)
+            except :
+                self.send_error (404, "No ssl support, python 2.5")
+                return None
 
         try :
             soc.connect(host_port)
@@ -133,9 +150,20 @@ class HTTPProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
             try    : msg = arg[1]
             except : msg = arg
             self.send_error (404, msg)
-            return False
+            return None
 
-        return True
+        return soc
+
+    def sendReply (self, reply) :
+
+        self.connection.send  ('HTTP/1.0 200 OK\n')
+        self.connection.send  ('Connection: Close\n')
+        self.connection.send  ('Pragma: no-cache\n')
+        self.connection.send  ('Cache-Control: no-cache\n')
+        self.connection.send  ('Content-Type: text/text\n')
+        self.connection.send  ('\n' )
+        self.connection.send  (reply)
+        self.connection.send  ('\n' )
 
     def sendStatus (self) :
 
@@ -156,14 +184,32 @@ class HTTPProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
             pass
         statusLock.release()
 
-        self.connection.send  ('HTTP/1.0 200 OK\n')
-        self.connection.send  ('Connection: Close\n')
-        self.connection.send  ('Pragma: no-cache\n')
-        self.connection.send  ('Cache-Control: no-cache\n')
-        self.connection.send  ('Content-Type: text/text\n')
-        self.connection.send  ('\n')
-        self.connection.send  (string.join(status, '\n'))
-        self.connection.send  ('\n')
+        self.sendReply  (string.join(status, '\n'))
+
+    def sendPage (self, id) :
+
+        try :
+            import MySQLdb
+            db      = MySQLdb.connect \
+                    (    host       = config.get (varName, 'dbhost'), 
+                         user       = config.get (varName, 'user'  ), 
+                         passwd     = config.get (varName, 'passwd'),
+                         db         = config.get (varName, 'db'    ),
+                         charset    = 'utf8'
+                    )
+        except :
+            self.sendReply ('Cannot connect to database')
+            return
+
+        cursor = db.cursor()
+        cursor.execute ('select page from httpcache where id = %s', [ id ])
+        try :
+            page = cursor.fetchone()[0]
+        except :
+            self.sendReply ('Page not found')
+            return
+
+        self.connection.sendall (page)
 
     def ident (self) :
 
@@ -175,12 +221,23 @@ class HTTPProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
 
         scraperID = None
         runID     = None
+        cache     = 0
 
         rem       = self.connection.getpeername()
         loc       = self.connection.getsockname()
-        ident     = urllib.urlopen ('http://%s:9001/Ident?%s:%s' % (rem[0], rem[1], loc[1])).read()
+
+        #  If running as a transparent HTTP or HTTPS then the remote end is connecting
+        #  to port 80 or 443 irrespective of where we think it is connecting to; for a
+        #  non-transparent proxy use the actual port.
+        #
+        if   mode == 'H' : port = 80
+        elif mode == 'S' : port = 443
+        else             : port = loc[1]
+        ident     = urllib.urlopen ('http://%s:9001/Ident?%s:%s' % (rem[0], rem[1], port)).read()
 
         for line in string.split (ident, '\n') :
+            if line == '' :
+                continue
             key, value = string.split (line, '=')
             if key == 'runid' :
                 runID     = value
@@ -188,41 +245,57 @@ class HTTPProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
             if key == 'scraperid' :
                 scraperID = value
                 continue
-            if key == 'allow' :
+            if key == 'allow'  :
                 self.m_allowed.append (value)
                 continue
-            if key == 'block' :
+            if key == 'block'  :
                 self.m_blocked.append (value)
                 continue
+            if key == 'option' :
+                name, opt = string.split (value, ':')
+                if name == 'webcache' : cache = int(opt)
 
-        return scraperID, runID
+        return scraperID, runID, cache
+
+    def blockmessage(self, url):
+
+        qurl = urllib.quote(url)
+        return """Scraperwiki blocked access to "%s".""" % (qurl)
+
 
     def do_CONNECT (self) :
 
-        (scm, netloc, path, params, query, fragment) = urlparse.urlparse (self.path, 'http')
-        scraperID, runID = self.ident ()
+        (scheme, netloc, path, params, query, fragment) = urlparse.urlparse (self.path, 'http')
+        scraperID, runID, cache = self.ident ()
 
         self.swlog().log (scraperID, runID, 'P.CONNECT', arg1 = self.path)
 
-        if not self.hostAllowed (netloc, scraperID, runID) :
-            self.send_error (403, blockmsg % self.path)
+        if not self.hostAllowed (self.path, scraperID, runID) :
+            self.send_error (403, self.blockmessage(self.path))
             self.swlog().log (scraperID, runID, 'P.ERROR', arg1 = 'Denied',  arg2 = self.path)
             return
 
-        soc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
-            if self._connect_to(self.path, soc):
+            soc = self._connect_to(scheme, netloc)
+            if soc is not None :
                 self.log_request(200)
-                self.wfile.write(self.protocol_version +
+                self.connection.send(self.protocol_version +
                                  " 200 Connection established\r\n")
-                self.wfile.write("Proxy-agent: %s\r\n" % self.version_string())
-                self.wfile.write("\r\n")
-                self._read_write(soc, None)
+                self.connection.send("Proxy-agent: %s\r\n" % self.version_string())
+                self.connection.send("\r\n")
+                self.connection.send(self.getResponse(soc))
         finally:
-            soc.close()
+            if soc is not None :
+                soc.close()
             self.connection.close()
 
         self.swlog().log (scraperID, runID, 'P.DONE', arg1 = self.path)
+
+    def notify (self, host, **query) :
+
+        query['message_type'] = 'sources'
+        try    : urllib.urlopen ('http://%s:9001/Notify?%s'% (host, urllib.urlencode(query))).read()
+        except : pass
 
     def retrieve (self, method) :
 
@@ -230,7 +303,19 @@ class HTTPProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
         Handle GET and POST requests.
         """
 
-        (scm, netloc, path, params, query, fragment) = urlparse.urlparse (self.path, 'http')
+        #  If this is a transparent HTTP or HTTPS proxy then modify the path with the
+        #  protocol and the host.
+        #
+        if   mode == 'H' : self.path = 'http://%s%s'  % (self.headers['host'], self.path)
+        elif mode == 'S' : self.path = 'https://%s%s' % (self.headers['host'], self.path)
+
+        #  This ensures that we only add headers into requests that are going into the scraperwiki
+        #  system (or a runlocal sw system)
+        #
+        (scheme, netloc, path, params, query, fragment) = urlparse.urlparse (self.path, 'http')
+        isSW = netloc.endswith('scraperwiki.com')
+        if netloc[:9] == '127.0.0.1':
+            isSW = True
 
         #  Path /Status returns status information.
         #
@@ -239,19 +324,24 @@ class HTTPProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
             self.connection.close()
             return
 
-        scraperID, runID = self.ident ()
+        if path == '/Page' :
+            self.sendPage   (query)
+            self.connection.close()
+            return            
+
+        scraperID, runID, cache = self.ident ()
         self.swlog().log (scraperID, runID, 'P.GET', arg1 = self.path)
 
         if path == '' or path is None :
             path = '/'
 
-        if scm not in [ 'http', 'https' ] or fragment or not netloc :
+        if scheme not in [ 'http', 'https' ] or fragment or not netloc :
             self.send_error (400, "Malformed URL %s" % self.path)
             self.swlog().log (scraperID, runID, 'P.ERROR', arg1 = 'Bad URL', arg2 = self.path)
             return
-        if not self.hostAllowed (netloc, scraperID, runID) :
+        if not self.hostAllowed (self.path, scraperID, runID) :
             self.swlog().log (scraperID, runID, 'P.ERROR', arg1 = 'Denied',  arg2 = self.path)
-            self.send_error (403, blockmsg % self.path)
+            self.send_error (403, self.blockmessage(self.path))
             return
 
         if runID is not None :
@@ -260,31 +350,102 @@ class HTTPProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
             except : pass
             statusLock.release ()
 
-        cpath = None
-        cfile = None
-        used  = None
+        ctag    = None
+        used    = None
+        content = None
+        bytes   = 0
+        cacheid = ''
 
-        if 'x-cache' in self.headers and self.headers['x-cache'] == 'on' :
-            if method == "GET" and cacheDir is not None :
-                mangled = hashlib.md5(self.path).hexdigest()
-                mbits   = [ mangled[0:2], mangled[2:4], mangled[4:] ]
-                cdir    = '%s/%s/%s' % (cacheDir, mbits[0], mbits[1])
-                if not os.path.exists (cdir) :
-                    try    : os.makedirs (cdir)
-                    except : pass
-                cpath   = '%s/%s/%s/%s' % (cacheDir, mbits[0], mbits[1], mbits[2])
+        #  Check if caching might be possible. This is the case if
+        #   * Caching has been enabled
+        #   * The x-cache header is greater than zero
+        #
+        if not isSW and useCache and cache > 0 :
+            #  "cbits" will be set to a 3-element list comprising the path (including
+            #  query bits), the url-encoded content if any, and the cookie string, if any.
+            #
+            cbits = None
 
+            #  GET is easy, note the path, the content is empty. Cookies will be set
+            #  later.
+            #
+            if method == "GET" :
+
+                cbits = [ self.path, '', '' ]
+
+            #  For POST, check that 'content-type' is 'application/x-www-form-urlencoded'
+            #  and that we have a content length. If so then the content is read and
+            #  noted along with the path. The content will be passed on later.
+            #
+            if method == "POST" \
+                and 'content-length' in self.headers \
+                and 'content-type'   in self.headers \
+                and self.headers['content-type'] == 'application/x-www-form-urlencoded' :
+
+                clen    = int(self.headers['content-length'])
+                content = ''
+                while len(content) < clen :
+                    data = self.connection.recv (clen - len(content))
+                    if data is None or data == '' :
+                        break
+                    content += data
+
+                cbits = [ self.path, content, '' ]
+
+            #  If we can cache then add cookies if any, and calculate a hash on
+            #  the path, content and cookies. Hive off the first two digit pairs
+            #  for directories (which are created if needed) and generate a
+            #  path name.
+            #
+            if cbits is not None :
+
+                if 'cookie' in self.headers :
+                    cbits[2] = self.headers['cookie']
+
+                ctag = hashlib.sha1(string.join (cbits, '____')).hexdigest()
+
+        db = None
+        if ctag :
+            try :
+                import MySQLdb
+                db      = MySQLdb.connect \
+                        (    host       = config.get (varName, 'dbhost'), 
+                             user       = config.get (varName, 'user'  ), 
+                             passwd     = config.get (varName, 'passwd'),
+                             db         = config.get (varName, 'db'    ),
+                             charset    = 'utf8'
+                        )
+            except :
+                pass
+
+        #  Try opening a possible cache file. If this succeeds then we can
+        #  simply send the content as the reply. If not then we go to the real
+        #  server, possibly storing results in the cacahe.
+        #
         try    :
-            cfile = open (cpath, 'r')
-            self.connection.send(cfile.read())
+            cursor    = db.cursor()
+            cursor.execute \
+                (   '''
+                    select  id,
+                            page
+                    from    httpcache
+                    where   tag = %s
+                    and     substr(page,1,6) = 'HTTP/1'
+                    and     time_to_sec(timediff(now(), stamp)) < %s
+                    order   by id desc
+                    limit   1
+                    ''',
+                    [ ctag, cache ]
+                )
+            cacheid, page  = cursor.fetchone()
+            cursor    = db.cursor()
+            cursor.execute ('update httpcache set stamp = now(), hits = hits + 1 where tag = %s', [ ctag ])
             used = 'CACHED'
         except :
             startat = time.strftime ('%Y-%m-%d %H:%M:%S')
-            soc     = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            if cpath : cfile = open (cpath, 'w')
-
             try :
-                if self._connect_to (netloc, soc) :
+                soc = self._connect_to (scheme, netloc)
+                if soc is not None :
                     self.log_request()
                     soc.send \
                         (   "%s %s %s\r\n" %
@@ -302,13 +463,63 @@ class HTTPProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
                             continue
                         if key == 'x-cache'     :
                             continue
-                        soc.send ("%s: %s\r\n" % (key, value))
+                        soc.send ('%s: %s\r\n' % (key, value))
+                    if isSW :
+                        soc.send ("%s: %s\r\n" % ('x-scraperid', scraperID and scraperID or ''))
+                        soc.send ("%s: %s\r\n" % ('x-runid',     runID     and runID     or ''))
                     soc.send ("\r\n")
-                    self._read_write(soc, cfile)
+                    if content :
+                        soc.send (content)
+                    page  = self.getResponse(soc)
+                    if db :
+                        cursor = db.cursor()
+                        cursor.execute \
+                            (   '''
+                                insert  into    httpcache
+                                        (       tag,
+                                                url,
+                                                page,
+                                                hits,
+                                                scraperid,
+                                                runid
+                                        )
+                                values  ( %s, %s, %s, %s, %s, %s )
+                                ''',
+                                [   ctag, self.path, page, 1, scraperID, runID    ]
+                            )
+                        def iid (cursor) :
+                            try    : return cursor.lastrowid
+                            except : pass
+                            try    : return cursor.insert_id()
+                            except : pass
+                            return None
+                        cacheid = iid(cursor)
             finally :
-                soc  .close()
-                if cfile : cfile.close()
+                if soc is not None :
+                    soc.close()
         finally :
+            rem     = self.connection.getpeername()
+            try    : offset1 = string.index (page, '\r\n\r\n')
+            except : offset1 = 0x3fffffff
+            try    : offset2 = string.index (page, '\n\n'    )
+            except : offset2 = 0x3fffffff
+            if offset1 < offset2 :
+                   bytes = len(page) - offset1 - 4
+            else : bytes = len(page) - offset2 - 2
+            if bytes < 0 :
+                bytes = len(page)
+            
+            failedmessage = ''
+            m = re.match ('^HTTP/1\\..\\s+([0-9]+)\\s+(.*?)[\r\n]', page)
+            if m :
+                if m.group(1) != '200' :
+                    failedmessage = 'Failed:' + m.group(1) + "  " + m.group(2)
+            else :
+                failedmessage = 'Failed: (code missing)'
+            
+            self.notify (self.connection.getpeername()[0], runid = runID, url = self.path, failedmessage = failedmessage, bytes = bytes, cacheid = cacheid, cached = (used == 'CACHED'))
+
+            self.connection.sendall (page)
             self.connection.close()
 
         if runID is not None :
@@ -319,22 +530,25 @@ class HTTPProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
 
         self.swlog().log (scraperID, runID, 'P.DONE', arg1 = self.path, arg2 = used)
 
-    def _read_write (self, soc, cfile, idle = 0x7ffffff) :
+    def getResponse (self, soc, idle = 0x7ffffff) :
 
         """
-        Copy data backl and forth between the client and the server.
+        Copy data back and forth between the client and the server.
 
         @type   soc     : Socket
         @param  soc     : Socket to server
         @type   idle    : Integer
         @param  idel    : Maximum idling time between data
+        @return String  : Text received from server
         """
 
+        resp  = []
         iw    = [self.connection, soc]
         ow    = []
         count = 0
         pause = 5
         busy  = True
+
         while busy :
             count        += pause
             (ins, _, exs) = select.select(iw, ow, iw, pause)
@@ -342,20 +556,19 @@ class HTTPProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
                 break
             if ins :
                 for i in ins :
-                    if i is soc : out = self.connection
-                    else        : out = soc
                     try    : data = i.recv (8192)
                     except : return
-                    if data :
-                        out.send(data)
+                    if data is not None and data != '' :
                         count = 0
-                        if i is soc and cfile is not None :
-                            cfile.write (data)
+                        if i is soc : resp.append (data)
+                        else        : soc .send  (data)
                     else :
                         busy = False
                         break
             if count >= idle : 
                 break
+
+        return string.join (resp, '')
 
     def do_GET (self) :
 
@@ -366,9 +579,15 @@ class HTTPProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
         self.retrieve ("POST")
 
 #   do_HEAD   = do_GET
-#   do_PUT    = do_GET
+    do_PUT    = do_POST
 #   do_DELETE = do_GET
 
+class HTTPSProxyHandler (HTTPProxyHandler) :
+
+    def setup(self):
+        self.connection = self.request
+        self.rfile = socket._fileobject(self.request, "rb", self.rbufsize)
+        self.wfile = socket._fileobject(self.request, "wb", self.wbufsize)
 
 class HTTPProxyServer \
         (   SocketServer.ThreadingMixIn,
@@ -377,13 +596,36 @@ class HTTPProxyServer \
     pass
 
 
-def execute (port) :
+class HTTPSProxyServer (HTTPProxyServer) :
 
-    HTTPProxyHandler.protocol_version = "HTTP/1.0"
+    def __init__(self, server_address, HandlerClass):
 
-    httpd = HTTPProxyServer(('', port), HTTPProxyHandler)
+        HTTPProxyServer.__init__(self, server_address, HandlerClass)
+        ctx = OpenSSL.SSL.Context(OpenSSL.SSL.SSLv23_METHOD)
+        fpem = '/var/www/scraperwiki/uml/httpproxy/server.pem'
+        ctx.use_privatekey_file (fpem)
+        ctx.use_certificate_file(fpem)
+        self.socket = OpenSSL.SSL.Connection \
+                            (   ctx,
+                                socket.socket(self.address_family, self.socket_type)
+                            )
+        self.server_bind    ()
+        self.server_activate()
+
+
+def execute () :
+
+    HTTPProxyHandler.protocol_version  = "HTTP/1.0"
+    HTTPSProxyHandler.protocol_version = "HTTPS/1.0"
+
+    port = config.getint (varName, 'port')
+
+    if mode == 'S' :
+           httpd = HTTPSProxyServer (('', port), HTTPSProxyHandler)
+    else : httpd = HTTPProxyServer  (('', port), HTTPProxyHandler )
+
     sa    = httpd.socket.getsockname()
-    print "Serving HTTP on", sa[0], "port", sa[1], "..."
+    print "Serving on", sa[0], "port", sa[1], "..."
 
     httpd.serve_forever()
 
@@ -392,7 +634,7 @@ def sigTerm (signum, frame) :
 
     try    : os.kill (child, signal.SIGTERM)
     except : pass
-    try    : os.remove (varDir + '/run/httpproxy.pid')
+    try    : os.remove ('%s/run/%s.pid' % (varDir, varName))
     except : pass
     sys.exit (1)
 
@@ -405,15 +647,15 @@ if __name__ == '__main__' :
 
     for arg in sys.argv[1:] :
 
-        if arg in ('-h', '--help') :
+        if arg in ('-h', '--help')  :
             print "usage: " + sys.argv[0] + USAGE
             sys.exit (1)
 
-        if arg[: 6] == '--uid=' :
+        if arg[: 6] == '--uid='     :
             uid      = arg[ 6:]
             continue
 
-        if arg[: 6] == '--gid=' :
+        if arg[: 6] == '--gid='     :
             gid      = arg[ 6:]
             continue
 
@@ -421,29 +663,40 @@ if __name__ == '__main__' :
             varDir   = arg[ 9:]
             continue
 
-        if arg[:11] == '--cacheDir='  :
-            cacheDir = arg[11:]
-            continue
-
         if arg[ :9] == '--config='  :
             confnam  = arg[ 9:]
             continue
 
-        if arg == '--allowAll' :
+        if arg[: 7] == '--mode='    :
+            mode     = arg[ 7:]
+            continue
+
+        if arg == '--useCache'      :
+            useCache = True
+            continue
+
+        if arg == '--allowAll'      :
             allowAll = True
             continue
 
-        if arg == '--subproc' :
+        if arg == '--subproc'       :
             subproc  = True
             continue
 
-        if arg == '--daemon' :
+        if arg == '--daemon'        :
             daemon   = True
             continue
 
         print "usage: " + sys.argv[0] + USAGE
         sys.exit (1)
 
+
+    if mode not in [ 'H', 'S', 'P' ] :
+        print "usage: " + sys.argv[0] + USAGE
+        sys.exit (1)
+
+    if   mode == 'H' : varName = 'httpproxy'
+    elif mode == 'S' : varName = 'httpsproxy'
 
     #  If executing in daemon mode then fork and detatch from the
     #  controlling terminal. Basically this is the fork-setsid-fork
@@ -454,7 +707,7 @@ if __name__ == '__main__' :
         if os.fork() == 0 :
             os .setsid()
             sys.stdin  = open ('/dev/null')
-            sys.stdout = open (varDir + '/log/httpproxy', 'w', 0)
+            sys.stdout = open ('%s/log/%s' % (varDir, varName), 'w', 0)
             sys.stderr = sys.stdout
             if os.fork() == 0 :
                 ppid = os.getppid()
@@ -467,7 +720,7 @@ if __name__ == '__main__' :
             os.wait()
             sys.exit (1)
 
-        pf = open (varDir + '/run/httpproxy.pid', 'w')
+        pf = open ('%s/run/%s.pid' % (varDir, varName), 'w')
         pf.write  ('%d\n' % os.getpid())
         pf.close  ()
 
@@ -498,4 +751,4 @@ if __name__ == '__main__' :
     config = ConfigParser.ConfigParser()
     config.readfp (open(confnam))
 
-    execute (config.getint ('httpproxy', 'port'))
+    execute ()

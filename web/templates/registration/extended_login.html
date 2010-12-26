@@ -49,6 +49,7 @@
 	        </p>
     		<input type="submit" name="login" value="Sign in" />
     	</form>
+        <p><a href="/accounts/password/reset/">Forgotten Your Password?</a></p>
     </div>
 
     <div class="content half right">
@@ -58,15 +59,20 @@
     	       <input type="hidden" name="redirect" value="{{redirect}}"/>
     	    </fieldset>
     	    <ul class="form">	    
+    	        <li{% if registration_form.name.errors %} class="error"{% endif %}>
+        	    {{ registration_form.name.label_tag }}
+        	    {{ registration_form.name }}
+        	    {% field_errors registration_form.name %}        	        
+        	</li>
     	        <li{% if registration_form.username.errors %} class="error"{% endif %}>
-        	        {{ registration_form.username.label_tag }}
-        	        {{ registration_form.username }}
-        	        {% field_errors registration_form.username %}        	        
-        	    </li>
+        	    {{ registration_form.username.label_tag }}
+        	    {{ registration_form.username }}
+        	    {% field_errors registration_form.username %}        	        
+        	</li>
     	        <li{% if registration_form.email.errors %} class="error"{% endif %}>
         	    {{ registration_form.email.label_tag }}
         	    {{ registration_form.email }}
-                {% field_errors registration_form.email %}        	    
+                    {% field_errors registration_form.email %}        	    
     	        </li>
     	        <li{% if registration_form.password1.errors %} class="error"{% endif %}>
             	    {{ registration_form.password1.label_tag }}
@@ -92,11 +98,6 @@
                 	    {{ registration_form.tos }}
                 	    {{ registration_form.tos.label_tag }}        	    
                 	    {% field_errors registration_form.tos %}
-                	</li>
-                	<li>
-                	    {{ registration_form.data_protection }}
-                	    {{ registration_form.data_protection.label_tag }}        	    
-                	    {% field_errors registration_form.data_protection %}
                 	</li>
                 </ul>
             </div>

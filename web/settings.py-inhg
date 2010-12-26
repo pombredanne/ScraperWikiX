@@ -4,7 +4,7 @@ This file imports all gobal settings and defined new ones.
 Anything imported in global_settings can be overwriten for a local install.
 
 """
-from global_setting import *
+from global_settings import *
 
 import os
 import sys
@@ -29,6 +29,7 @@ SCRAPERWIKI_DIR     = HOME_DIR + '/web/'      # top level directory of the insta
 READINGS_DIR        = SCRAPERWIKI_DIR + '/readings/'  # directory containing the cached webpages
 MODULES_DIR         = SCRAPERWIKI_DIR                # directory containing readers, detectors, collectors, and observers modules
 SMODULES_DIR        = HOME_DIR + '/scrapers/'                # directory containing scrapers
+VMODULES_DIR        = HOME_DIR + '/views/'                # directory containing views
 
 DATASTORE_DATABASE_ENGINE     = ''       # 'postgresql_psycopg2', 'postgresql', 'mysql', 'sqlite3' or 'oracle'.
 DATASTORE_DATABASE_HOST     = ''      
@@ -36,6 +37,9 @@ DATASTORE_DATABASE_NAME       = '' # Or path to database file if using sqlite3.
 DATASTORE_DATABASE_USER       = ''   # Not used with sqlite3.
 DATASTORE_DATABASE_PASSWORD   = ''         # Not used with sqlite3.
 DATASTORE_DATABASE_PORT   = ''
+
+DATAPROXY_HOST  = ''	# Host running data proxy - see uml.cfg
+DATAPROXY_PORT  = 0	# Dataproxy port - see uml.cfg
 
 FEEDBACK_EMAIL = 'feedback@somedomain.com'
 FEEDBACK_EMAIL_TITLE = '[ScraperWiki Feedback]'
@@ -48,26 +52,6 @@ SESSION_TIMEOUT = 1209600
 
 QUICKCACHE_DIR      = HOME_DIR + '/quickcache/'   # leave blank to disable caching
 
-
-# Define how scraper code should be run.
-# There are 3 available settings:
-# 
-# 1. firestarter_apache
-# 2. firestarter_django
-# 3. popen
-# 
-# The first option is prefered as it allows running code securly,
-# streaming output and killing processes.
-# 
-# The second option will work in most cases, but will not stream code.
-# 
-# The third option will only work is settings.DEBUG is true as it
-# allows code to run as the apache user on the server without 
-# any control.
-
-CODE_RUNNING_MODE = 'firestarter_django'
-
-
 FIREBOX_PATH = '/var/www/scraperwiki/UML/Server/scripts'
 sys.path.append(FIREBOX_PATH)
 
@@ -75,14 +59,26 @@ sys.path.append(FIREBOX_PATH)
 PAYPAL_RECEIVER_EMAIL = "your_paypal_sandbox_email@example.com"
 EMAIL_FROM = 'noreply@localhost'
 MARKET_BOUNTY_CHARGE = 6.3
+TEAM_EMAIL = 'all@scraperwiki.com'
 
 API_DOMAIN = 'localhost'
-
 
 ORBETED_PORT = 8001
 ORBETED_DOMAIN = 'localhost'
 
 # TEST_RUNNER = 'django-test-coverage.runner.run_tests'
 
-
 MEDIA_URL = '/media/'
+
+USE_DUMMY_VIEWS = False # use a dummy when running views in iframes
+
+#Google docs settings
+GDOCS_UPLOAD_USER = ''
+GDOCS_UPLOAD_PASSWORD = ''
+GDOCS_UPLOAD_FOLDER_URI = '' #you will probably want to set the permissions on this folder to be public
+GDOCS_UPLOAD_MAX = 1048576 #1MB upload max set by google
+
+SCREENSHOT_DIR = '/tmp/'
+VIEW_DOMAIN = 'localhost:8000'
+
+UMLURLS = [ ]  # no umls for local installs

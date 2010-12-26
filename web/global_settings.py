@@ -21,7 +21,7 @@ sys.path.append('web')
 # Django settings for scraperwiki project.
 
 DEBUG = False
- 
+
 TIME_ZONE = 'London/England'
 LANGUAGE_CODE = 'en-uk'
 
@@ -43,7 +43,6 @@ HOME_DIR = ""
 # URL that handles the media served from MEDIA_ROOT. Make sure to use a trailing slash.
 URL_ROOT = ""
 MEDIA_ROOT = URL_ROOT + 'media/'
-CODEMIRROR_ROOT = MEDIA_ROOT + "CodeMirror-0.65/"
 
 # URL prefix for admin media -- CSS, JavaScript and images. Make sure to use a trailing slash.
 ADMIN_MEDIA_PREFIX = URL_ROOT + '/media-admin/'
@@ -88,6 +87,7 @@ TEMPLATE_CONTEXT_PROCESSORS = [
   'django_notify.context_processors.notifications',
   'frontend.context_processors.site',
   'frontend.context_processors.template_settings',
+  'frontend.context_processors.site_messages',
 ]
 
 INSTALLED_APPS = [
@@ -97,23 +97,29 @@ INSTALLED_APPS = [
     'django.contrib.sites',
     'django.contrib.admin',
     'django.contrib.comments',
+    'django.contrib.markup',
     'registration',
     'south',
     'profiles',
+    'django.contrib.humanize',
+    'paypal.standard.ipn',
+    'django_notify',
+    'tagging',
+    'mailer',
+    'contact_form',
+    'piston',      # needs 'django-piston' and 'phpserialize'
+    'captcha',
+    
+    # the following are scraperwiki apps
     'frontend',
-  	'scraper',
+  	'codewiki',
   	'notification',
-  	'editor',
-  	'contact_form',
   	'payment',  	
   	'market',
-  	'piston',      # needs 'django-piston' and 'phpserialize'
   	'api',
-  	'django_notify',
-  	'tagging',
-  	'django.contrib.humanize',
-  	'paypal.standard.ipn',
-  	'mailer',
+    'whitelist',
+    'cropper',
+    #'devserver',
 ]
 
 
@@ -127,7 +133,7 @@ INTERNAL_IPS = ['127.0.0.1',]
 
 
 NOTIFICATIONS_STORAGE = 'session.SessionStorage'
-REGISTRATION_BACKEND = "registration.backends.default.DefaultBackend"
+REGISTRATION_BACKEND = "frontend.backends.UserWithNameBackend"
 
 #tagging
 FORCE_LOWERCASE_TAGS = True
@@ -135,8 +141,6 @@ FORCE_LOWERCASE_TAGS = True
 
 # define default directories needed for paths to run scrapers
 SCRAPER_LIBS_DIR = join(HOME_DIR, "scraperlibs")
-# this value doesn't get through into frontend/base.html, unfortunately
-CODEMIRROR_URL = MEDIA_URL + "CodeMirror-0.65/"  
 
 #send broken link emails
 SEND_BROKEN_LINK_EMAILS = DEBUG == False
@@ -150,6 +154,7 @@ SCRAPERS_PER_PAGE = 60
 
 #API
 MAX_API_ITEMS = 500
+DEFAULT_API_ITEMS = 100
 MAX_API_DISTANCE_KM = 10
 
 
@@ -161,7 +166,10 @@ TEMPLATE_SETTINGS = [
  'API_DOMAIN',
  'ORBETED_PORT',
  'ORBETED_DOMAIN',
- 'CODE_RUNNING_MODE',
+ 'MAX_DATA_POINTS',
+ 'MAX_MAP_POINTS',
+ 'REVISION',
+ 'VIEW_DOMAIN',
  'CODEMIRROR_URL',
 ]
 
@@ -169,6 +177,24 @@ TEMPLATE_SETTINGS = [
 SPARKLINE_MAX_DAYS = 30
 
 try:
-    CHANGESET = open('changeset.txt').read()
-except Exception, e:
-    CHANGESET = "none"
+    REVISION = open(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'revision.txt')).read()[:-1]
+except:
+    REVISION = ""
+
+MAX_DATA_POINTS = 500
+
+BLOG_FEED = 'http://blog.scraperwiki.com/feed/'
+
+DATA_TABLE_ROWS = 10
+RSS_ITEMS = 50
+
+SCREENSHOT_SIZES = {'small': (110, 73), 'medium': (220, 145), 'large': (800, 600)}
+
+CODEMIRROR_VERSION = "0.92"
+CODEMIRROR_URL = "CodeMirror-%s/" % CODEMIRROR_VERSION
+
+HTTPPROXYURL = "http://localhost:9005"
+DISPATCHERURL = "http://localhost:9000"
+UMLURLS = ["http://89.16.177.195:9101", "http://89.16.177.195:9102", "http://89.16.177.195:9103", "http://89.16.177.195:9104"]
+
+

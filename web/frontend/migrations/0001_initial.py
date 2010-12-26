@@ -4,6 +4,13 @@ from django.db import models
 from frontend.models import *
 
 class Migration:
+
+    # Need to make sure the content types for Scraper and Solicitation
+    # models have been created so that frontend.management.create_alert_types
+    # doesn't fail
+    depends_on = (
+        ("market", "0001_initial"),
+    )
     
     def forwards(self, orm):
         

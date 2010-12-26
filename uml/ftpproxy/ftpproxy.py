@@ -5,28 +5,28 @@ __doc__ = """ScraperWiki FTP Proxy"""
 
 __version__ = "ScraperWiki_0.0.1"
 
-import	sys
-import	os
-import	socket
-import	string
-import	urllib
-import	urllib2
-import	re
-import	time
-import	signal
-import	ConfigParser
-import	SocketServer
+import  sys
+import  os
+import  socket
+import  string
+import  urllib
+import  urllib2
+import  re
+import  time
+import  signal
+import  ConfigParser
+import  SocketServer
 
-USAGE      = " [--allowAll] [--varDir=dir] [--subproc] [--daemon] [--config=file]"
-child      = None
-config	   = None
-varDir	   = '/var'
-uid	   = None
-gid	   = None
-allowAll   = False
-statusLock = None
-statusInfo = {}
-blockmsg   = """500 Scraperwiki has blocked you from accessing "%s" because it is not allowed according to the rules\n"""
+USAGE       = " [--allowAll] [--varDir=dir] [--subproc] [--daemon] [--config=file]"
+child       = None
+config      = None
+varDir      = '/var'
+uid         = None
+gid         = None
+allowAll    = False
+statusLock  = None
+statusInfo  = {}
+blockmsg    = """500 Scraperwiki has blocked you from accessing "%s" because it is not allowed according to the rules\n"""
 
 class FTPProxyServer (SocketServer.ThreadingMixIn, SocketServer.TCPServer) :
 
@@ -45,11 +45,11 @@ class FTPProxyHandler (SocketServer.BaseRequestHandler) :
         self.m_allowed = []
         self.m_blocked = []
 
-        self.m_user	= None
-        self.m_pass	= None
-        self.m_type	= None
+        self.m_user = None
+        self.m_pass = None
+        self.m_type = None
         self.m_cwd      = []
-        self.m_pasv	= None
+        self.m_pasv = None
 
         SocketServer.BaseRequestHandler.__init__ (self, request, client_address, server)
 
@@ -62,7 +62,7 @@ class FTPProxyHandler (SocketServer.BaseRequestHandler) :
 
         return self.m_swlog
 
-    def hostAllowed (self, netloc, scraperID, runID) :
+    def hostAllowed (self, path, scraperID, runID) :
 
         """
         See if access to a specified host is allowed. These are specified as a list
@@ -70,8 +70,8 @@ class FTPProxyHandler (SocketServer.BaseRequestHandler) :
         both start and finish so they must match the entire host. The file is named
         from the IP address of the caller.
 
-        @type   netloc   : String
-        @param  netloc   : Hostname
+        @type   path     : String
+        @param  path     : Hostname
         @type   scraperID: String
         @param  scraperID: Scraper identifier or None
         @return          : True if access is allowed
@@ -83,10 +83,10 @@ class FTPProxyHandler (SocketServer.BaseRequestHandler) :
             return True
 
         for block in self.m_blocked :
-            if re.match('^' + block + '$', netloc) :
+            if re.search(block, path) :
                 return False
         for allow in self.m_allowed :
-            if re.match('^' + allow + '$', netloc) :
+            if re.search(allow, path) :
                 return True
 
         return False
@@ -106,6 +106,8 @@ class FTPProxyHandler (SocketServer.BaseRequestHandler) :
         loc       = self.request.getsockname()
         ident     = urllib.urlopen ('http://%s:9001/Ident?%s:%s' % (rem[0], rem[1], loc[1])).read()
         for line in string.split (ident, '\n') :
+            if line == '' :
+                continue
             key, value = string.split (line, '=')
             if key == 'runid' :
                 runID     = value
@@ -122,10 +124,17 @@ class FTPProxyHandler (SocketServer.BaseRequestHandler) :
 
         return scraperID, runID
 
+    def notify (self, host, **query) :
+
+        query['message_type'] = 'sources'
+        urllib.urlopen ('http://%s:9001/Notify?%s'% (host, urllib.urlencode(query))).read()
+
     def handle (self) :
 
         self.request.send ("220- ScraperWiki FTP Proxy\n")
         self.request.send ("220\n")
+
+        scraperID, runID = self.ident ()
 
         busy = True
         text = ''
@@ -181,10 +190,8 @@ class FTPProxyHandler (SocketServer.BaseRequestHandler) :
                 if args[0] == 'RETR' :
 
                     url = 'ftp://%s/%s/%s' % (self.m_cwd[2], string.join (self.m_cwd[3:], '/'), args[1])
-                    print url
 
-                    scraperID, runID = self.ident ()
-                    if not self.hostAllowed (self.m_cwd[2], scraperID, runID) :
+                    if not self.hostAllowed (url, scraperID, runID) :
                         self.request.send (blockmsg % self.m_cwd[2])
                         self.swlog().log (scraperID, runID, 'T.ERROR', arg1 = 'Denied', arg2 = url)
                         continue
@@ -192,6 +199,14 @@ class FTPProxyHandler (SocketServer.BaseRequestHandler) :
                     self.request.send ("150 File follows.\n")
                     try :
                         data = urllib2.urlopen(url).read()
+
+                        self.notify \
+                            (   self.request.getpeername()[0],
+                                runid   = runID,
+                                url     = url,
+                                content = '%d bytes from %s' % (len(data), url)
+                            )
+
                         self.m_pasv.send (data)
                         self.m_pasv.close()
                         self.m_pasv = None
@@ -242,11 +257,11 @@ if __name__ == '__main__' :
             print "usage: " + sys.argv[0] + USAGE
             sys.exit (1)
 
-        if arg[: 6] == '--uid='	:
+        if arg[: 6] == '--uid=' :
             uid      = arg[ 6:]
             continue
 
-        if arg[: 6] == '--gid='	:
+        if arg[: 6] == '--gid=' :
             gid      = arg[ 6:]
             continue
 

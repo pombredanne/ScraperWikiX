@@ -1,111 +1,3 @@
-function setupCodeViewer(iLineCount){
-    var oCodeEditor;
-    if(iLineCount < 20){
-        iLineCount = 20;
-    }
-    $(document).ready(function(){
-
-       oCodeEditor = CodeMirror.fromTextArea("txtScraperCode", {
-           parserfile: ["../contrib/python/js/parsepython.js"],
-           stylesheet: "/media/CodeMirror-0.65/contrib/python/css/pythoncolors.css",
-
-           path: "/media/CodeMirror-0.65/js/",
-           textWrapping: true, 
-           lineNumbers: true, 
-           indentUnit: 4,
-           readOnly: true,
-           tabMode: "spaces", 
-           autoMatchParens: true,
-           width: '100%',
-           height: iLineCount + 'em',           
-           parserConfig: {'pythonVersion': 2, 'strictErrors': true}
-
-       });
-      });
-}
-
-function APISetupExploreFunction(){
-
-    //link up the call button to change a few bits of text
-    $('#btnCallMethod').click(
-        function(){
-            $('.explorer_response h2').html('Function response');
-            return true;
-        }
-    );
-
-    //change the sidebar examples to links where useful
-    $('#ulFormats li code').each(
-        function(){
-            var sText = $(this).html();
-            var aLink = $('<a href="#">' + sText + '</a>');
-            aLink.click(
-                function (){
-                    $('#format').val(sText);
-                    $('#format').focus();
-                    rewriteApiUrl();                    
-                }
-            );
-            $(this).html(aLink);
-        }
-    );
-
-    $('#ulScraperShortNames li code').each(
-        function(){
-            var sText = $(this).html();
-            var aLink = $('<a href="#">' + sText + '</a>');
-            aLink.click(
-                function (){
-                    $('#name').val(sText);
-                    $('#name').focus();
-                    rewriteApiUrl();
-                    return false;
-                }
-            );
-            $(this).html(aLink);
-        }
-    );
-
-    $('#ulApiKeys li code').each(
-        function(){
-            var sText = $(this).html();
-            var aLink = $('<a href="#">' + sText + '</a>');
-            aLink.click(
-                function (){
-                    $('#key').val(sText);
-                    $('#key').focus();
-                    rewriteApiUrl();
-                    return false;
-                }
-            );
-            $(this).html(aLink);
-        }
-    );
-
-    //linkup the texboxes to rewrite the API url
-    $('.api_arguments dl input').each(
-        $(this).keyup(
-            function(){
-                rewriteApiUrl();
-            }
-        )
-    );
-}
-
-function rewriteApiUrl (){
-    sArgs = '?';
-    var aControls = $('.api_arguments dl input')
-    for (var i=0; i < aControls.length; i++) {
-        if($(aControls[i]).val() != ''){
-	        if (i > 0) {
-            	sArgs += ('&');
-        	}
-            sArgs += (aControls[i].id + '=' + $(aControls[i]).val());
-        }
-    };
-    $('#aApiLink span').html(sArgs);
-    $('#aApiLink').attr('href', $('#uri').val() + sArgs);
-}
 
 
 function setupButtonConfirmation(sId, sMessage){
@@ -120,84 +12,24 @@ function setupButtonConfirmation(sId, sMessage){
     );
 }
 
-function setupDataMap(){
-
-    // Setup the map
-    oNavigation = new OpenLayers.Control.Navigation();
-    oNavigation.zoomWheelEnabled = false;
-    oPanZoomBar = new OpenLayers.Control.PanZoomBar();
-    
-    oMap = new OpenLayers.Map ("divDataMap", {
-          controls:[
-              oNavigation,
-              oPanZoomBar,
-              new OpenLayers.Control.Attribution()],
-          maxExtent: new OpenLayers.Bounds(-20037508.34,-20037508.34,20037508.34,20037508.34),
-          maxResolution: 156543.0399,
-          numZoomLevels: 10,
-          units: 'm',
-          projection: new OpenLayers.Projection("EPSG:900913"),
-          displayProjection: new OpenLayers.Projection("EPSG:4326")
-      } );
-
-
-      // Add OSM tile and marker layers
-      oMap.addLayer(new OpenLayers.Layer.OSM.Mapnik("Osmarender"));
-
-      oMarkersLayer = new OpenLayers.Layer.Markers("Markers");
-      oMap.addLayer(oMarkersLayer);      
-      
-     // Make icon
-     var oIconSize = new OpenLayers.Size(21,25);
-     var oIconOffset = new OpenLayers.Pixel(-(oIconSize.w/2), -oIconSize.h);
-     var oIcon = new OpenLayers.Icon('http://www.openstreetmap.org/openlayers/img/marker.png',oIconSize, oIconOffset);
-     
-     // Get data
-     var oData = eval('('+ $('#hidMapData').val() + ')');
-     
-     //find where the latlng field is
-     var iLatLngIndex = 0;
-     for (var i=0; i < oData.headings.length; i++) {
-         if(oData.headings[i] == 'latlng'){
-             iLatLngIndex = i;
-         }
-     };
-
-     for (var i=0; i < oData.rows.length; i++) {
-         
-         //get the lat/lng
-         iLat = oData.rows[i][iLatLngIndex].split(',')[1].replace(')', '');
-         iLng = oData.rows[i][iLatLngIndex].split(',')[0].replace('(', '');         
-         var oLngLat = new OpenLayers.LonLat(iLat, iLng).transform(new OpenLayers.Projection("EPSG:4326"), oMap.getProjectionObject());         
-
-         //work out the html to show
-         var sHtml = '<table>';
-         for (var ii=0; ii < oData.rows[i].length; ii++) {
-            sHtml += ('<tr><td>' + oData.headings[ii]   + '</td>');
-            sHtml += ('<td>' + oData.rows[i][ii] + '</td></tr>');
-         };
-         sHtml += '</table>';
-
-         //make the marker
-         var oMarker = new OpenLayers.Marker(oLngLat,oIcon.clone())
-         oMarkersLayer.addMarker(oMarker);
-         oMarker.html = sHtml;
-         
-         oMarker.events.register("mousedown", oMarker,
-            function(o, b){
-                var oPopup = new OpenLayers.Popup.AnchoredBubble("item", this.lonlat, 
-                    new OpenLayers.Size(350,250), this.html, this.icon, true);
-                oMap.addPopup(oPopup, true);
-
-            }
-        );              
-           
-     };
-     
-     //zoom to extent of the markers
-     oMap.zoomToExtent(oMarkersLayer.getDataExtent());    
-
+function setupSearchBoxHint(){
+    $('#divSidebarSearch input:text').focus(function() {
+        if ($('#divSidebarSearch input:submit').attr('disabled')) {
+            $(this).val('');
+            $(this).removeClass('hint');
+            $('#divSidebarSearch input:submit').removeAttr('disabled'); 
+        }
+    });
+    $('#divSidebarSearch input:text').blur(function() {
+        if(!$('#divSidebarSearch input:submit').attr('disabled') && ($(this).val() == '')) {
+            $(this).val('Search ScraperWiki');
+            $(this).addClass('hint');
+            $('#divSidebarSearch input:submit').attr('disabled', 'disabled'); 
+        }
+    });
+    $('#divSidebarSearch input:text').blur();
 }
+$(document).ready(function(){ setupSearchBoxHint(); }); 
 
 function setupScroller(){
     
@@ -268,5 +100,141 @@ function setupIntroSlideshow(){
 
 function setupDataViewer(){
     $('.raw_data').flexigrid({height:250});    
+}
+
+function setupCKANLink(){
+    $.ajax({
+        url:'http://ckan.net/api/search/resource',
+        dataType:'jsonp',
+        cache: true,
+        data: {url: 'scraperwiki.com', all_fields: 1},
+        success:function(data){
+            var id = window.location.pathname.split('/')[3];
+            $.each(data.results, function(index,ckan){
+                if ($.inArray(id, ckan.url.split('/')) != -1){
+                    $('div.metadata dl').append('<dt>CKAN:</dt><dd><a href="http://ckan.net/package/'+ckan.package_id+'" target="_blank">link</a><dd>');
+                }
+            });
+        }
+    });
+}
+
+function setupScraperEditInPlace(wiki_type, short_name){
     
+    //about
+    $('#divAboutScraper').editable('admin/', {
+             indicator : 'Saving...',
+             tooltip   : 'Click to edit...',
+             cancel    : 'Cancel',
+             submit    : 'Save',
+             type      : 'textarea',
+             loadurl: 'raw_about_markup/',
+             onblur: 'ignore',
+             event: 'dblclick',
+             submitdata : {js: 1, short_name: short_name},
+             placeholder: ''       
+         });
+
+    $('#aEditAboutScraper').click(
+        function(){
+             $('#divAboutScraper').dblclick();
+             oHint = $('<div id="divMarkupHint" class="content_footer"><p><strong>You can use Textile markup to style the description:</strong></p><ul><li>*bold* / _italic_ / @code@</li><li>* Bulleted list item / # Numbered list item</li><li>"A link":http://www.data.gov.uk</li><li>h1. Big header / h2. Normal header</li></ul></div>');
+             $('#divAboutScraper form').append(oHint);
+             return false;
+        }
+    );
+
+    //title
+    $('#hCodeTitle').editable('admin/', {
+             indicator : 'Saving...',
+             tooltip   : 'Click to edit...',
+             cancel    : 'Cancel',
+             submit    : 'Save',
+             onblur: 'ignore',
+             event: 'dblclick',
+             placeholder: '',             
+             submitdata : {js: 1, short_name: short_name}
+         });
+         
+    $('#aEditTitle').click(
+        function(){
+             $('#hCodeTitle').dblclick();
+             return false;
+        }
+    );
+
+    //tags
+    oDummy = $('<div id="divEditTags"></div>');
+    $('#divScraperTags').append(oDummy);
+    $('#divEditTags').editable('admin/', {
+             indicator : 'Saving...',
+             tooltip   : 'Click to edit...',
+             cancel    : 'Cancel',
+             submit    : 'Save tags',
+             onblur: 'ignore',
+             event: 'dblclick',
+             placeholder: '',
+             loadurl: 'tags/',
+             submitdata : {js: 1, short_name: short_name},
+             onreset: function(){ $('#labelEditTags').hide();},
+             callback: function (data){
+                 //add the new tags onto the list
+                 aItems = data.split(',');
+                 $('#divScraperTags ul').html('');
+                 for (var i=0; i < aItems.length; i++) {
+                    url = '/tags/' + escape(aItems[i].trim())
+                    $('#divScraperTags ul').append($('<li><a href="' + url +'">' + aItems[i].trim() + '</a></li>'))
+                 };
+                 //clear out the textbox for next time
+                 $('#divEditTags').html('');
+                 $('#labelEditTags').hide();
+            }
+         });
+    $('#aEditTags').click (
+         function(){
+              $('#divEditTags').dblclick();
+              $('#labelEditTags').show();
+              return false;
+         }
+     );
+
+     $('#labelEditTags').hide();
+
+     //scheduler
+     //alert(schedule_options.length)
+     $('#spnRunInterval').editable('admin/', {
+              indicator : 'Saving...',
+              tooltip   : 'Click to edit...',
+              cancel    : 'Cancel',
+              submit    : 'Save',
+              onblur: 'ignore',
+              data   : $('#hidScheduleOptions').val(),
+              type   : 'select',
+              event: 'dblclick',
+              placeholder: '',
+              submitdata : {js: 1, short_name: short_name}
+          });
+      
+      $('#aEditSchedule').click (
+           function(){
+                sCurrent = $('#spnRunInterval').html().trim();               
+                $('#spnRunInterval').dblclick();
+                $('#spnRunInterval select').val(sCurrent);
+                return false;
+           }
+       );          
+       $('#publishScraperButton').click(function(){
+           $.ajax({
+               url: 'admin/',
+               data: {'id': 'publishScraperButton'},
+               type: 'POST',
+               success: function(){
+                   $('#publishScraper').fadeOut();
+               },
+               error: function(){
+                   alert("Something went wrong publishing this scraper. Please try again. If the problem continues please send a message via the feedback form.");
+               }
+           });
+           return false;
+       });
 }

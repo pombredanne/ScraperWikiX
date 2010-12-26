@@ -777,7 +777,7 @@
         "pk": 53, 
         "model": "auth.permission", 
         "fields": {
-            "codename": "add_userscraperrole", 
+            "codename": "add_usercoderole", 
             "name": "Can add user scraper role", 
             "content_type": 18
         }
@@ -795,7 +795,7 @@
         "pk": 54, 
         "model": "auth.permission", 
         "fields": {
-            "codename": "change_userscraperrole", 
+            "codename": "change_usercoderole", 
             "name": "Can change user scraper role", 
             "content_type": 18
         }
@@ -813,7 +813,7 @@
         "pk": 55, 
         "model": "auth.permission", 
         "fields": {
-            "codename": "delete_userscraperrole", 
+            "codename": "delete_usercoderole", 
             "name": "Can delete user scraper role", 
             "content_type": 18
         }
@@ -999,23 +999,7 @@
     }, 
     {
         "pk": 1, 
-        "model": "frontend.userprofile", 
-        "fields": {
-            "bio": "Example Profile", 
-            "alert_types": [
-                1, 
-                2, 
-                3
-            ], 
-            "alerts_last_sent": "2010-02-19 07:01:20", 
-            "created_at": "2010-02-19 07:01:20", 
-            "user": 2, 
-            "alert_frequency": 0
-        }
-    }, 
-    {
-        "pk": 1, 
-        "model": "scraper.scraper", 
+        "model": "codewiki.scraper", 
         "fields": {
             "status": "published", 
             "has_geo": 0, 
@@ -1028,7 +1012,6 @@
             "short_name": "test_scraper", 
             "has_temporal": 0, 
             "last_run": null, 
-            "disabled": 0, 
             "source": "", 
             "featured": 0, 
             "line_count": 0, 
@@ -1036,17 +1019,16 @@
             "published": 1, 
             "first_published_at": "2010-02-19 07:08:53", 
             "guid": "0", 
-            "scraper_sparkline_csv": "0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0", 
-            "revision": "0"
+            "scraper_sparkline_csv": "0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0"
         }
     }, 
     {
         "pk": 1, 
-        "model": "scraper.userscraperrole", 
+        "model": "codewiki.usercoderole", 
         "fields": {
             "role": "owner", 
             "user": 2, 
-            "scraper": 1
+            "code": 1
         }
     }
 ]

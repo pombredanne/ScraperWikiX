@@ -15,18 +15,7 @@ def dev():
     env.activate = env.path + '/bin/activate'
     env.user = 'scraperdeploy'
     env.virtualhost_path = "/"
-    env.deploy_version = "Dev"
-
-def alpha():
-    "On the scrpaerwiki server, accessible from http://alpha.scraperwiki.com"
-    env.hosts = ['212.84.75.28']
-    env.path = '/var/www/alpha.scraperwiki.com'
-    env.branch = 'stable'
-    env.web_path = 'file:///home/scraperwiki/scraperwiki'
-    env.activate = env.path + '/bin/activate'
-    env.user = 'scraperdeploy'
-    env.virtualhost_path = "/"
-    env.deploy_version = "Alpha"
+    env.deploy_version = "dev"
 
 def www():
     "The main www server (horsell)"
@@ -60,7 +49,7 @@ def virtualenv(command):
 
 
 def buildout():
-    virtualenv('buildout')
+    virtualenv('buildout -N')
 
 def write_changeset():
     try:
@@ -69,8 +58,14 @@ def write_changeset():
     except:
         env.changeset = ""
 
+def update_revision():
+    """
+    Put the current HG revision in a file so that Django can use it to avoid caching JS files
+    """
+    virtualenv("hg identify | awk '{print $1}' > web/revision.txt")
+
 def install_cron():
-    virtualenv('crontab crontab')
+    virtualenv('crontab crontab.%s' % env.deploy_version)
 
 def deploy():
     """
@@ -83,21 +78,18 @@ def deploy():
     print "***************** DEPLOY *****************"
     print "Please Enter your deploy message: \r"
     message = raw_input()
-    env.kforge_user = raw_input('Your kforge Username: ')
-    kforge_pass = pw = getpass.getpass('Your kforge Password: ')
+    env.name = raw_input('Your name: ')
     import time
     env.release = time.strftime('%Y%m%d%H%M%S')
 
-    run("""cd %s; 
-        hg pull https://%s:%s@kforgehosting.com/scraperwiki/hg; 
-        hg update -C %s""" % (env.path,
-                              env.kforge_user,
-                              kforge_pass,
-                              env.branch))
+    run("cd %s; hg pull; hg update -C %s" % (env.path, env.branch))
     
+    buildout()
     migrate()
     write_changeset()
     install_cron()
+    create_tarball()
+    update_revision()
     restart_webserver()   
     email(message)
 
@@ -115,18 +107,19 @@ Subject: New Scraperwiki Deployment to %(version)s (deployed by %(user)s)
 
 """ % {
         'version' : env.deploy_version,
-        'user' : env.kforge_user,
+        'user' : env.name,
         'changeset' : env.changeset,
         'message_body' : message_body,
         }
     sudo("""echo "%s" | sendmail scrapewiki-commits@googlegroups.com """ % message)
     
 def migrate():
-  virtualenv('cd web; python manage.py syncdb')
-  virtualenv('cd web; python manage.py migrate')
+    virtualenv('cd web; python manage.py syncdb')
+    virtualenv('cd web; python manage.py migrate')
 
 def restart_webserver():
     "Restart the web server"
     sudo('apache2ctl restart')
 
-
+def create_tarball():
+    virtualenv("mkdir -p ./web/media/src/; hg archive -t tgz ./web/media/src/scraperwiki.tar.gz")

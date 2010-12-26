@@ -2,10 +2,39 @@
 host	= 89.16.177.212
 port	= 9000
 umllist	= uml001,uml002,uml003,uml004
+confurl	= http://localhost:8080/whitelist/config
+path	= /scraperwiki/live/scrapers,/scraperwiki/live/scraperlibs
+
+[twister]
+statusurl = http://localhost:8080/scrapers/twister/status
+
+[webproxy]
+host	= 89.16.177.195
+port	= 9002
+dbhost	= 89.16.177.176
+user	= cache
+passwd	= 4dlk4eaaA44A1gTx
+db	= swcache_live
 
 [httpproxy]
 host	= 89.16.177.195
-port	= 9002
+port	= 9005
+dbhost	= 89.16.177.176
+user	= cache
+passwd	= 4dlk4eaaA44A1gTx
+db	= swcache_live
+
+[httpsproxy]
+host	= 89.16.177.195
+port	= 9006
+dbhost	= 89.16.177.176
+user	= cache
+passwd	= 4dlk4eaaA44A1gTx
+db	= swcache_live
+
+[ftpproxy]
+host	= 89.16.177.195
+port	= 9004
 
 [dataproxy]
 dbtype  = mysql                                                                                                                             
@@ -14,6 +43,9 @@ port    = 9003
 user    = datastore
 passwd  = 3jFjLrje6dFJ7cQE
 db      = datastore_live
+
+[metadata]
+host    = scraperwiki.com
 
 [swlogger]
 host	= 89.16.177.176

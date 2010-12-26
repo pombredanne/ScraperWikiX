@@ -1,4 +1,5 @@
 syntax: regexp
+\~$
 \.pyc$
 \.pyo$
 \.orig$
@@ -19,7 +20,9 @@ syntax: regexp
 ^.hgignore$
 ^scraperlibs/scraperwiki/datastore/config.cfg.local$
 ^web/localsettings.py$
+^web/settings.py$
 ^web/editor/code_runner.py$
 ^web/python$
 ^web/pip-log.txt$
 ^uml$
+^web/media/src/scraperwiki.tar.gz

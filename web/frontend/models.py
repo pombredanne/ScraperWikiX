@@ -1,6 +1,7 @@
 import datetime
 
 from django.db import models
+from django.db.models import Q
 from django.contrib.auth.models import User
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.contenttypes import generic
@@ -10,7 +11,7 @@ class AlertTypes(models.Model):
     Model defining what type of alerts a user will get.
     
     `name`
-        should match the 'message_type' in scraper.models.ScraperHistory
+        should match the 'message_type' in codewiki.models.ScraperHistory
     `label`
         is the default text to be displaied on the user profile form. This may
         not be the best way of doing it, but it does make sure the form
@@ -52,15 +53,32 @@ class Alerts(models.Model):
         
     """
     
+    # there are two GenericForeignKey entries in this class that cause massive 
+    # complications in order to avoid the evil of including fields in the base class that are 
+    # not applicable to all types.
+    # could be worse; could use inherited classes
+    
+    # the object about which the alert is about, eg codewiki.models.Code or User, 
+    # notwithstanding the fact that there is a user field already below
     content_type = models.ForeignKey(ContentType)
     object_id = models.PositiveSmallIntegerField(blank=True, null=True)
     content_object = generic.GenericForeignKey('content_type', 'object_id')
-    message_type = models.CharField(blank=False, max_length=100)
+    
+    # assumes this represents the actual type of the alert (although you will have to dig into the special kind of alert to represent it properly in ways not covered by message_value)
+    message_type = models.CharField(blank=False, max_length=100)  
     message_value = models.CharField(blank=True, null=True, max_length=5000)
+    
     meta = models.CharField(blank=True, max_length=1000)
     message_level = models.IntegerField(blank=True, null=True, default=0)
     datetime = models.DateTimeField(blank=False, default=datetime.datetime.now)
     user = models.ForeignKey(User, blank=True, null=True)
+    historicalgroup = models.CharField(blank=True, max_length=100)  # currently this is set from earliesteditor
+
+    # links to the object with further event information (either codewiki.models.Code.CodeCommitEvent or codewiki.models.Scraper.ScraperRunEvent)
+    event_type = models.ForeignKey(ContentType, null=True, related_name='event_alerts_set')
+    event_id = models.PositiveSmallIntegerField(blank=True, null=True)
+    event_object = generic.GenericForeignKey('event_type', 'event_id')
+
 
     objects = models.Manager()
     
@@ -98,6 +116,7 @@ class UserProfile(models.Model):
     outside of this application.
     """
     user             = models.ForeignKey(User, unique=True)
+    name             = models.CharField(max_length=64)
     bio              = models.TextField(blank=True, null=True)
     created_at       = models.DateTimeField(auto_now_add=True)
     alerts_last_sent = models.DateTimeField(auto_now_add=True)
@@ -170,14 +189,43 @@ class UserToUserRole(models.Model):
     role      = models.CharField(max_length = 100)
 
 # Signal Registrations
+# when a user is created, we want to generate a profile for them
 
-# when a user gets registered, we want to generate a profile for them
-from registration.signals import user_registered
+def create_user_profile(sender, instance, created, **kwargs):
+    if created and sender == User:
+        try:
+            profile = UserProfile(user=instance, alert_frequency=60*60*24)
+            profile.save()
+        except:
+            # syncdb is saving the superuser
+            # UserProfile is yet to be created by migrations
+            pass
 
-def create_user_profile(sender, **kwargs):
-    user = kwargs['user']
-    profile = UserProfile(user=user, alert_frequency=60*60*24)
-    profile.save()  
+models.signals.post_save.connect(create_user_profile)
 
-user_registered.connect(create_user_profile)
+class MessageManager(models.Manager):
+    def get_active_message(self, now):
+        """
+        The active message is the one that is displayed on the site.
 
+        It is the most recently created message that isn't excluded
+        because of its start or finish date.
+        """
+        messages = self.filter(Q(start__isnull=True) | Q(start__lte=now))
+        messages = messages.filter(Q(finish__isnull=True) | Q(finish__gte=now))
+        return messages.latest('id')
+
+class Message(models.Model):
+    text = models.TextField()
+    start = models.DateTimeField(blank=True, null=True)
+    finish = models.DateTimeField(blank=True, null=True)
+    objects = MessageManager()
+
+    def is_active_message(self):
+        return Message.objects.get_active_message(datetime.datetime.now()) == self
+
+    def __unicode__(self):
+        if self.is_active_message():
+            return "%s [Active]" % self.text
+        else:
+            return "%s [Inactive]" % self.text

@@ -7,6 +7,7 @@ from django.core.urlresolvers import reverse
 from django.test import TestCase
 
 import frontend
+from codewiki.models import Scraper
 
 class FrontEndViewsTests(TestCase):
     fixtures = ['./fixtures/test_data.json']
@@ -16,13 +17,6 @@ class FrontEndViewsTests(TestCase):
         user = User(username='test', password='123')
         user.save()
         
-        # ...and then make it's profile
-        profile = frontend.models.UserProfile()
-        profile.user = user
-        profile.bio = "test bio"
-        profile.save()
-        
-
     def test_profile_edit(self):
         self.client.login(username='test', password='123')
         response = self.client.post(reverse('profiles_edit_profile',), 
@@ -69,4 +63,18 @@ class FrontEndViewsTests(TestCase):
         response = self.client.get(reverse('contact_form'))
         self.assertEqual(response.status_code, 200)
 
+    def test_tutorials(self):    
+        Scraper.objects.create(title='Python1', language='Python', istutorial=True)
+        Scraper.objects.create(title='Python2', language='Python', istutorial=True)
+        Scraper.objects.create(title='Python3', language='Python', istutorial=True)
+        Scraper.objects.create(title='PHP1', language='PHP', istutorial=True)
+        Scraper.objects.create(title='PHP2', language='PHP', istutorial=True)
 
+        response = self.client.get(reverse('help_tutorials2'))
+        self.assertEqual(response.status_code, 200)
+
+        tutorials =  response.context['tutorials']
+        self.assertTrue('Python' in tutorials)
+        self.assertEqual(3, len(tutorials['Python']))
+        self.assertTrue('PHP' in tutorials)
+        self.assertEqual(2, len(tutorials['PHP']))

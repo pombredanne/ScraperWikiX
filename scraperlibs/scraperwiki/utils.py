@@ -5,6 +5,7 @@ import urllib2
 import urllib
 import cookielib
 import re
+
 try:
   import json
 except:
@@ -12,8 +13,13 @@ except:
 
 import cgi
 import os
+import sys
 import traceback
 import datetime
+import tempfile
+
+
+import scraperwiki.console
 
 # this will be useful for profiling the code, 
 # it should return an output in json that you can click on to take you to the correct line
@@ -25,77 +31,87 @@ def log(message=""):
     now = datetime.datetime.now()
     str_now = now.strftime("%Y-%m-%d %H:%M:%S")
     logmessage = "log( %s )\t\t %s() line %d%s : %s" % (str(message), stack[-2][2], stack[-2][1], tail, str_now)
-    print logmessage
-    
+    scraperwiki.console.logMessage (logmessage)
+
+
+def httpresponseheader(headerkey, headervalue):
+    ''' eg httpresponseheader('Content-Type', 'text/plain') '''
+    scraperwiki.console.logHTTPResponseHeader (headerkey, headervalue)
+
 
 #  The code will install a set of specific handlers to be used when a URL
-#  is opened. See the "setupHandlers" function below.
+#  is opened. See the "urllibSetup" and "urllib2Setup" functions below.
 #
-cj           = None
-urllibopener = None
-canCache     = False
+urllibopener  = None
+urllib2cj     = None
+urllib2opener = None
+cacheFor      = 0
 
-#  The "setupHandlers" function is called with zero or more handlers. An opener
+#  The "urllib2Setup" function is called with zero or more handlers. An opener
 #  is constructed using these, plus a cookie processor, and is installed as the
 #  urllib2 opener. The opener also overrides the user-agent header.
 #
-def setupHandlers (*handlers) :
+def urllib2Setup (*handlers) :
 
-    global cj
+    global urllib2cj
+    global urllib2opener
+    urllib2cj = cookielib.CookieJar()
+    urllib2opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(urllib2cj), *handlers)
+    urllib2opener.addheaders = [('User-agent', 'ScraperWiki')]
+    urllib2.install_opener (urllib2opener)
+
+#  Similarly for urllib, but no handlers.
+#
+def urllibSetup () :
+
     global urllibopener
-    cj = cookielib.CookieJar()
-    urllibopener = urllib2.build_opener(urllib2.HTTPCookieProcessor(cj), *handlers)
+    urllibopener = urllib.URLopener()
     urllibopener.addheaders = [('User-agent', 'ScraperWiki')]
-    urllib2.install_opener (urllibopener)
+    urllib._urlopener = urllibopener
 
 #  "allowCache" is called to allow (or disallow) caching; this will typically be
 #  set True for running from the editor, and False when the scraped is cron'd
 #
-def allowCache (enable) :
+def allowCache (cf) :
 
-    global canCache
-    canCache = enable
+    global cacheFor
+    cacheFor = cf
 
 #  API call from the scraper to enable caching, provided that it is allowed as in
-#  the previous method.
+#  the previous method. "urllibSetup" and "urllib2Setup" are called if they have
+#  no already been called.
 #
 def cache (enable = True) :
 
-    if cj is None :
-        setupHandlers ()
-    urllibopener.addheaders = [('x-cache', (enable and canCache) and "on" or "off")]
+#   global urllibopener
+#   global urllib2opener
+
+#   if urllibopener  is None : urllibSetup  ()
+#   if urllib2opener is None : urllib2Setup ()
+#   urllibopener .addheaders.append (('x-cache', enable and cacheFor or 0))
+#   urllib2opener.addheaders.append (('x-cache', enable and cacheFor or 0))
+
+    urllib2.urlopen("http://127.0.0.1:9001/Option?runid=%s&webcache=%s" % (os.environ['RUNID'], enable and cacheFor or 0)).read()
 
 #  Scrape a URL optionally with parameters. This is effectively a wrapper around
 #  urllib2.orlopen().
 #
 def scrape (url, params = None) :
 
-    #  Normally the "setupHandlers" function would have been called from
+    #  Normally the "urllib2Setup" function would have been called from
     #  the controller to specify http, https and ftp proxies, however check
     #  in case not and call without any handlers.
     #
-    global cj
-    global urllibopener
-    if cj is None :
-        setupHandlers ()
+    global urllib2opener
+    if urllib2opener is None :
+        urllib2Setup ()
 
     data = params and urllib.urlencode(params) or None
-    
-    try:
-        fin = urllibopener.open(url, data)
-        text = fin.read()
-        fin.close()   # get the mimetype here
-    except:
-        print '<scraperwiki:message type="sources">' + json.dumps({ 'content' : "Failed: %s" % url })
-        return None
 
-    print_content = {
-      'url': url,
-      'content' : "%d bytes from %s" % (len(text), url),
-      }
-      #'content_long' : cgi.escape(text),      
+    fin  = urllib2opener.open(url, data)
+    text = fin.read()
+    fin.close()   # get the mimetype here
 
-    print '<scraperwiki:message type="sources">%s' % json.dumps(print_content)
     return text
 
 
@@ -124,9 +140,7 @@ def parse_html(text):
 
 def pdftoxml(pdfdata):
     """converts pdf file to xml file"""
-    import tempfile
     pdffout = tempfile.NamedTemporaryFile(suffix='.pdf')
-    print pdffout.name
     pdffout.write(pdfdata)
     pdffout.flush()
 
@@ -143,6 +157,33 @@ def pdftoxml(pdfdata):
     return xmldata
 
 
+# code adapted from http://docs.python.org/library/imp.html#examples-imp
+# ideally there is a way to seamlessly overload the __import__ function and get us to call out like this
+# it should also be able to explicitly refer to a named revision
+def swimport(name, swinstance="http://scraperwiki.com"):
+    import imp
+    try:
+        return sys.modules[name]
+    except KeyError:
+        pass
+
+    #fp, pathname, description = imp.find_module(name)
+    url = "%s/editor/raw/%s" % (swinstance, name)
+    modulecode = urllib.urlopen(url).read() + "\n"
+    
+    modulefile = tempfile.NamedTemporaryFile(suffix='.py')
+    modulefile.write(modulecode)
+    modulefile.flush()
+    fp = open(modulefile.name)
+    return imp.load_module(name, fp, modulefile.name, (".py", "U", 1))
 
 
-
+# callback to a view with parameter lists (cross language capability)
+def jsviewcall(name, **args):
+    url = "http://scraperwiki.com/views/%s/run/?%s" % (name, urllib.urlencode(args))
+    response = urllib.urlopen(url).read()
+    try:
+        return json.loads(response)
+    except ValueError:
+        return response
+    

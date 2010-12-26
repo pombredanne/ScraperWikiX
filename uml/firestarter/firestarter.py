@@ -4,8 +4,15 @@ import  string
 import  time
 import  inspect
 import  os
-import  sha
+import  hashlib
 import  ConfigParser
+import  urllib2
+import  cStringIO
+
+try:
+    import simplejson as json
+except:
+    import json
 
 class FireWrapper :
 
@@ -31,7 +38,7 @@ class FireWrapper :
         resp.fp._rbufsize = 1
 
         self.m_resp    = resp
-        self.m_pending = ''
+        self.m_pending = cStringIO.StringIO()
 
     def read (self, n = None) :
 
@@ -66,18 +73,18 @@ class FireWrapper :
         ###  sensible code that sets the stream to non-blocking mode and
         ###  uses "select".
         ###
-        nlo = string.find (self.m_pending, '\n')
-        while nlo < 0 :
+        while True :
             more = self.m_resp.read (1)
             if more is None or more == '' :
-                res = self.m_pending
-                self.m_pending = ''
-                return res
-            self.m_pending += more
-            nlo = string.find (self.m_pending, '\n')
-        res = self.m_pending[:nlo + 1]
-        self.m_pending = self.m_pending[nlo + 1:]
+                break
+            self.m_pending.write(more)
+            if more == '\n' :
+                break
+        res = self.m_pending.getvalue()
+        self.m_pending.close()
+        self.m_pending = cStringIO.StringIO()
         return res
+
 
 class FireStarter :
 
@@ -95,8 +102,8 @@ class FireStarter :
         Class constructor.
         """
 
-        conf = ConfigParser.ConfigParser()
-        conf.readfp (open(config))
+        self.m_conf        = ConfigParser.ConfigParser()
+        self.m_conf.readfp (open(config))
 
 
         self.m_dispatcher  = None
@@ -108,22 +115,21 @@ class FireStarter :
         self.m_limits      = {}
         self.m_allowed     = []
         self.m_blocked     = []
-        self.m_iptables    = []
         self.m_paths       = []
         self.m_testName    = None
         self.m_runID       = None
         self.m_scraperID   = None
+        self.m_urlquery   = None
         self.m_traceback   = None
         self.m_error       = None
-        self.m_cache       = False
+        self.m_cache       = 0
+        self.m_language    = None
 
-        s = sha.new()
+        s = hashlib.sha1()
         s.update(str(os.urandom(16)))
         s.update(str(os.getpid (  )))
         s.update(str(time.time (  )))
         self.m_runID       = '%.6f_%s' % (time.time(), s.hexdigest())
-
-        self.setDispatcher  ('%s:%d' % (conf.get('dispatcher', 'host'), conf.getint('dispatcher', 'port')))
 
         import swlogger
         self.m_swlog = swlogger.SWLogger(config)
@@ -220,6 +226,17 @@ class FireStarter :
 
         self.m_scraperID = scraperID
 
+    def setUrlquery (self, urlquery) :
+
+        """
+        Set the urlquery string
+
+        @type   urlquery : String
+        @param  urlquery : Value
+        """
+
+        self.m_urlquery = urlquery
+    
     def setUser (self, user) :
 
         """
@@ -277,13 +294,24 @@ class FireStarter :
     def setCache (self, cache) :
 
         """
-        Set whether to allow URL caching or not
+        Set time for which cached pages are valid
 
-        @type   cache   : Bool
-        @param  cache   : True to allow caching
+        @type   cache   : Integer
+        @param  cache   : Time for which pages are valid, zero means no caching
         """
 
         self.m_cache = cache
+
+    def setLanguage (self, language) :
+
+        """
+        Set scripting language
+
+        @type   language: String
+        @param  language: Scripting language
+        """
+
+        self.m_language = language
 
     def addAllowedSites (self, *sites) :
 
@@ -315,19 +343,43 @@ class FireStarter :
         for site in sites :
             self.m_blocked.append (site)
 
-    def addIPTables (self, *rules) :
+    def loadConfiguration (self) :
 
         """
-        Add firewall rules which will be in effect when the command
-        or script runs. The rules are arguments to the I{iptables}
-        command. Multiple rules can be added as multiple arguments.
-
-        @type   rules   : List
-        @param  rules   : List of iptables firewall rules
+        Load configuration as retrieved from the configuration URL.
         """
 
-        for rule in rules :
-            self.m_iptables.append (rule)
+        confurl = self.m_conf.get('dispatcher', 'confurl')
+        if confurl != "allwhite":
+            try:
+                conftxt = urllib2.urlopen(confurl).read().replace('\r', '')
+            except:
+                if confurl[:26] == 'http://dev.scraperwiki.com':
+                    pass  # known problem
+                else:
+                    print json.dumps({ 'message_type':'console', 'content': "Failed to open: %s" % confurl })
+                conftxt = ""
+        else:
+            conftxt = "white=.*"  # hard code the whitelist to avoid accessing it (better for local versions)
+            
+        for line in conftxt.split('\n') :
+            try :
+                key, value = line.split('=')
+                if key == 'white' :
+                    self.addAllowedSites (value)
+                    continue
+                if key == 'black' :
+                    self.addBlockedSites (value)
+                    continue
+            except :
+                pass
+
+        # Ticket 325
+        #
+        if self.m_conf.has_option ('dispatcher', 'path') :
+            self.addPaths (*self.m_conf.get('dispatcher', 'path').split(','))
+
+        self.setDispatcher  ('%s:%d' % (self.m_conf.get('dispatcher', 'host'), self.m_conf.getint('dispatcher', 'port')))
 
     def addPaths (self, *paths) :
 
@@ -337,7 +389,8 @@ class FireStarter :
         """
 
         for path in paths :
-            self.m_paths.append (path)
+            if path:
+                self.m_paths.append (path)
 
     def setASLimit (self, soft, hard = None) :
 
@@ -412,12 +465,16 @@ class FireStarter :
             setter ('x-traceback',  self.m_traceback)
         if self.m_scraperID  is not None :
             setter ('x-scraperid',  self.m_scraperID)
+        if self.m_urlquery   is not None :
+            setter ('x-urlquery',   self.m_urlquery )
         if self.m_testName   is not None :
             setter ('x-testname',   self.m_testName )
         if self.m_runID      is not None :
             setter ('x-runid',      self.m_runID    )
-
-        setter ('x-cache', self.m_cache and "on" or "off")
+        if self.m_cache      is not None :
+            setter ('x-cache',      self.m_cache    )
+        if self.m_language   is not None :
+            setter ('x-language',   self.m_language )
 
         for resource, limit in self.m_limits.items() :
             setter ('x-setrlimit-%d' % resource, '%s,%s' % (limit[0], limit[1]))
@@ -431,9 +488,6 @@ class FireStarter :
 
         for site in range(len(self.m_blocked )) :
             setter ('x-addblockedsite-%d' % site, self.m_blocked [site])
-
-        for rule in range(len(self.m_iptables)) :
-            setter ('x-iptables-%d'       % rule, self.m_iptables[rule])
 
         for path in range(len(self.m_paths   )) :
             setter ('x-paths-%d'          % path, self.m_paths   [path])

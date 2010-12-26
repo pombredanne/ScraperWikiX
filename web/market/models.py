@@ -4,18 +4,18 @@ from django.core.mail import send_mail
 from django.template import loader, Context
 from django.conf import settings
 from django.contrib.contenttypes.models import ContentType
+from django.contrib.sites.models import Site
 
-from scraper.models import Scraper
+from codewiki.models import Scraper
 from payment.models import Invoice
 from payment.models import payment_done
 
 import market
 import tagging
 
+def solicitation_paid(sender, invoice, **kwargs):
 
-def solicitation_paid(invoice, **kwargs):
-
-    solicitation = Solicitation.objects.get(id=invoice.parent_id, delete=False)
+    solicitation = Solicitation.objects.get(id=invoice.parent_id, deleted=False)
     if not solicitation:
         raise Exception("Unable to find solicitation for ID")
 
@@ -37,7 +37,6 @@ class SolicitationStatus(models.Model):
 
     def __unicode__(self):
         return self.display_name
-
 
 class Solicitation(models.Model):
 
@@ -78,26 +77,66 @@ class Solicitation(models.Model):
 
         super(Solicitation, self).save()
 
-    def complete():
+    def complete(self):
+
         #update status
-        status = SolicitationStatus.objects.get(status='complete')
+        status = SolicitationStatus.objects.get(status='completed')
         self.status = status
         self.save()
 
-        #send an email to the team saying that money needs to be sent to the developer of the scraper
-        template = loader.get_template('emails/send_bounty.txt')
+        #copy over tags, description
+        for tag in tagging.models.Tag.objects.get_for_object(self):
+            tagging.models.Tag.objects.add_tag(self.scraper, tag.name)
+
+        if not self.scraper.description or self.scraper.description == '':
+            self.scraper.description = self.details
+
+        #add the requester as a contributor
+        self.scraper.add_user_role(self.user_created, 'requester')
+        
+        #TODO: add an item to the history of the scraper saying it was converted form a solicitation
+        #TODO: copy over discussion from solicitation to scraper
+        
+        #save scraper
+        self.scraper.save()
+        
+        if self.has_bounty():
+            #send an email to the team saying that money needs to be sent to the developer of the scraper
+            template = loader.get_template('emails/send_bounty.txt')
+            context = Context({
+                'solicitation': self,
+                'recipient_user': self.scraper.owner()
+            })
+            send_mail('Send Bounty', template.render(context), settings.EMAIL_FROM, [settings.TEAM_EMAIL], fail_silently=False)
+
+        #send an email to scraper owner to tell them they have been accepted and if bounty to expect an email about payment
+            template = loader.get_template('emails/bounty_accepted.txt')
+            context = Context({
+                'solicitation': self,
+                'developer': self.scraper.owner()
+            })
+            send_mail('Your scraper has been accepted', template.render(context), settings.EMAIL_FROM, [self.scraper.owner().email], fail_silently=False)
+
+    def reject(self):
+        #send email to scraper owner to tell them they have been rejected
+        template = loader.get_template('emails/bounty_rejected.txt')
         context = Context({
             'solicitation': self,
-            'recipient_user': self.scraper.owner
+            'developer': self.scraper.owner()
         })
-        send_mail('Send Bounty', template.render(context), settings.EMAIL_FROM, [self.scraper.owner.email], fail_silently=False)
+        send_mail('Your scraper has been rejected', template.render(context), settings.EMAIL_FROM, [self.scraper.owner().email], fail_silently=False)
+
+        status = SolicitationStatus.objects.get(status='open')
+        self.status = status
+        self.scraper = None
+        self.save()
 
     def claim(self, scraper, user):
 
         #set the scraper_id on the solicitation
-        if scraper and scraper.is_published and user == scraper.owner():
+        if scraper and user == scraper.owner():
 
-            #set the status of the solicitation to 'pending'
+            #set the status of the solicitation to 'pending' if bounty, or complete if not
             status = SolicitationStatus.objects.get(status='pending')
             self.status = status
             self.scraper = scraper
@@ -114,10 +153,22 @@ class Solicitation(models.Model):
                 invoice.parent_id = self.pk
                 invoice.user = self.user_created
                 invoice.save()
-                        
+            else:
+                #set straight to completed if no bounty
+                self.complete()
+
+            #email the creator telling them it is done, and to pay if nesesary
+            title = "The scraper you requested for " + self.title + " has been written"
+            template = loader.get_template('emails/market_claim.txt')
+            context = Context({
+                'scraper': scraper,
+                'solicitation': self,
+                'url': 'http://' + Site.objects.get_current().domain
+            })
+            send_mail(title, template.render(context), settings.EMAIL_FROM, [self.user_created.email], fail_silently=False)
         else:
             #someone is messing about if we are here, throw an exception
-            raise Exception("Unable to find a published scraper (for this user) to add to this solicitation")
+            raise Exception("Unable to find a scraper (for this user) to add to this solicitation")
    
     def __unicode__(self):
         return "%s (%s)" % (self.title, self.price)

@@ -5,7 +5,7 @@
     <div class="page_title">
         <h1>Help &amp; FAQs</h1>
         <p>
-            Frequently asked questions about Scraperwiki can be found below. To start writing a scraper, see our <a href="{% url help_tutorials %}">tutorials</a> and <a href="{% url help_code_documentation %}">documentation</a>. 
+            Frequently asked questions about ScraperWiki can be found below. To start writing a scraper, see our <a href="{% url help_tutorials %}">tutorials</a> and <a href="{% url help_code_documentation %}">documentation</a>. 
         </p>
     </div>
     <div class="content">
@@ -14,6 +14,7 @@
             <li><a href="#what">What is ScraperWiki?</a></li>
             <li><a href="#who">Who is ScraperWiki for?</a></li>
             <li><strong>Technical questions</strong></li>
+            <li><a href="#browser">What browsers does this work in?</a></li>
             <li><a href="#languages">What programming languages can I use to write scrapers?</a></li>
             <li><a href="#libraries">What libraries are available?</a></li>
             <li><a href="#how">How do I write a screen scraper?</a></li>
@@ -25,7 +26,8 @@
             <li><strong>Licensing questions</strong></li>
             <li><a href="#licence">Who owns the code I write on ScraperWiki?</a></li>                                        
             <li><a href="#data_ownership">Who owns the data in ScraperWiki?</a></li>                                
-            <li><a href="data_types">What sort of data can/can't I scrape?</a></li>   
+            <li><a href="#data_types">What sort of data can/can't I scrape?</a></li>   
+            <li><a href="#source_code">Can I get a copy of the ScraperWiki source code?</a></li>
             <li><strong>Everything else</strong></li>                                     
             <li><a href="#security">How secure is your system? Can I try to break it?</a></li>
             <li><a href="#contact">How do I get in touch with you?</a></li>
@@ -48,11 +50,27 @@
                 </p>
             </dd>
 
+            <dt id="browsers">What browsers does this work in?</dt>
+
+            <dd>
+                <p>
+                As we are still in beta mode, we don't have the resources to keep it working in all browsers.  
+                Internet Explorer does not work when you try to run the code, but Google Chrome is able to work everywhere.  
+                There are issues with some of the older versions of FireFox.
+                </p>
+                <p>
+                To reiterate, the code executes on our servers.  It does not run in your browser 
+                in any kind of special plug-in.  What you see is pure HTML and Javascript.  
+                The technical difficulties are in finding the right settings that allow the streaming of data 
+                to the console window to work.
+                </p>
+            </dd>
+
             <dt id="languages">What programming languages can I use to write scrapers?</dt>
 
             <dd>
                 <p>
-                We only support Python at the moment, but will be adding more languages soon on the basis of who <a href="/contact/">shouts loudest</a>.
+                We support Python and PHP at the moment, but will be adding more languages soon on the basis of who <a href="/contact/">shouts loudest</a>.
                 </p>
             </dd>
             <dt id="libraries">What libraries are available?</dt>
@@ -66,6 +84,7 @@
                     <li><a href="http://codespeak.net/lxml/">Lxml</a> and <a href="http://code.google.com/p/html5lib/wiki/UserDocumentation">Html5lib</a> - useful for parsing HTML and XML</li>
                     <li>Pdftohtml - does what it says on the tin</li>
                     <li><a href="http://www.imagemagick.org/script/convert.php">Imagemagick</a> - for editing and converting raster image files</li>
+                    <li><a href="http://pygooglechart.slowchop.com/">PyGoogleChart</a> - for generating google chart urls</li>
                 </ul>
             </dd>
 
@@ -73,22 +92,6 @@
            <dd>
             
             <p>See our <a href="{% url help_tutorials %}">tutorials</a> and <a href="{% url help_code_documentation %}">documentation</a>.</p>
-            <!-- 
-                <p>
-                    You write a scraper using our <a href="/editor/">online editor</a>. 
-                </p>
-                <p>
-                    Use the <code>scraperwiki.scrape(url)</code> function to download a web page. Extract the data you want, and then use the <code>datastore.save(unique_keys, data, date=None, latlng=[None, None])</code> function to save your data.
-                </p>
-                <p>
-                    <code>date</code> and <code>latlng</code> are optional indexes for date and location (these are for extracting data more efficiantly from our API).
-                </p>
-                <p>
-                    The editor has 3 tabs: <strong>Console</strong> is for printing debug output from your scraper and displaying error messages; <strong>Data</strong> shows the data your scraper would save to the datastore; <strong>Sources</strong> shows the URLs you are scraping.
-                </p>
-                <p>
-                    Once you have written your scraper, click 'commit and publish' to publish your scraper and schedule it to run.
-                </p> -->
             </dd>
 
             <dt id="saving">What's the difference between saving and committing/publishing my scraper?</dt>
@@ -153,10 +156,17 @@
                 </p>
             </dd>
 
+            <dt id="source_code">Can I get a copy of the ScraperWiki source code?</dt>
+
+            <dd>
+                <p>Yes, the source code for the ScraperWiki site is available under the GNU Affero General Public License. You can 
+                <a href="https://bitbucket.org/ScraperWiki/scraperwiki">download the source here</a>.</p>
+            </dd>
+
             <dt id="security">How secure is your system? Can I try to break it?</dt>
 
             <dd>
-                <p>The code you write runs in a separate sandboxed system with controlled resources. If you try to write malicious code (<span class="code">while 1=1</span>, that kind of thing) you'll just be breaking your own scraper and annoying people, so please don't.
+                <p>The code you write runs in a separate sandboxed system with controlled resources. If you try to write malicious code (<span class="code">while True:</span>, that kind of thing) you'll just be breaking your own scraper and annoying people, so please don't.
                 </p>
             </dd>
 

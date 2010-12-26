@@ -1,0 +1,49 @@
+{% load markup %}
+{% load screen_shot %}
+<li class="code_object_line">
+    <h3>
+        <a href="{% url code_overview code.wiki_type code.short_name %}" class="screenshot">{% screen_shot code 'small' %}</a>
+        <a href="{% url code_overview code.wiki_type code.short_name %}">
+            {% if code.title %}{{ code.title }}{% else %}{{ code.short_name }}{% endif %}
+        </a>
+        <ul class="code_about">
+           <li class="codewiki_type {{code.wiki_type|lower}}">{{code.wiki_type|lower}}</li>
+           <li class="language {{code.language|lower}}">{{code.language|lower}}</li>
+
+           {% if code.scraper %}
+             {% if code.scraper.has_geo %}
+               <li><img src="{{ MEDIA_URL }}/images/icons/map.png"/></li>
+             {% endif %}
+             {% if code.scraper.has_temporal %}
+               <li><img src="{{ MEDIA_URL }}/images/icons/date.png"/></li>
+             {% endif %}
+           {% endif %}
+        </ul>
+    </h3>
+    <small>
+        Created by
+        {% load gravatar %}
+        {% if code.owner %}
+            {% show_gravatar code.owner 'small' %}
+            {% if code.owner.username %}
+                <a href="{% url profiles_profile_detail code.owner.username %}">{{ code.owner.get_profile.name }}</a>
+            {% endif %}
+        {% endif %}
+        {{code.created_at|timesince}} ago | {% if code.scraper.record_count %}
+          ({{ code.scraper.record_count }} records)
+        {% else %}
+          (no records)
+        {% endif %}
+    </small>
+    
+        <p>
+    {% if code.description %}
+            {{ code.description|textile|striptags|truncatewords:75 }}            
+    {% else %}
+            &nbsp;
+    {% endif %}
+        </p>
+    
+</li>
+
+

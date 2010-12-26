@@ -10,18 +10,18 @@ test $# = 1 ||
 	exit	1
 }
 
-test `id -u` = 0 ||
-{
-	echo	runuml: must be run as root
-	exit	1
-}
+#test `id -u` = 0 ||
+#{
+#	echo	runuml: must be run as root
+#	exit	1
+#}
 
 unm=$1
 echo $unm
 get(){
 	sed -n "/^\[${unm}\]/,/^\[/ s/^[ \t]*${1}[ \t]*=[ \t]*\(.*\)/\1/ p" uml.cfg
 }
-echo XXXX
+
 date	> ${unm}/running
 
 mem=`get mem`

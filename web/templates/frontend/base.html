@@ -1,84 +1,110 @@
-<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN">
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN"
+   "http://www.w3.org/TR/html4/strict.dtd">
 <html lang="en">
-	<head>
-	    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
-		<script type="text/javascript" src="{{ MEDIA_URL }}js/jquery-1.3.2.js"></script>
-		{% if has_map %}
-	            <script type="text/javascript" src="http://www.openlayers.org/api/OpenLayers.js"></script>                                        
-                <script src="http://www.openstreetmap.org/openlayers/OpenStreetMap.js"></script>                                      		                                
-		{% endif %}
-		<script type="text/javascript" src="{{ MEDIA_URL }}js/jquery-ui-1.7.2.custom.min.js"></script>
-		<script type="text/javascript" src="{{ MEDIA_URL }}js/jquery.easing.compatibility.js"></script>		
-		<script type="text/javascript" src="{{ MEDIA_URL }}js/jquery.cycle.all.min.js"></script>	
-		<script type="text/javascript" src="{{ MEDIA_URL }}js/flexigrid.js"></script>			
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
+    <script type="text/javascript" src="{{ MEDIA_URL }}js/jquery-1.3.2.js"></script>
+    <script type="text/javascript" src="{{ MEDIA_URL }}js/jquery-ui-1.7.2.custom.min.js"></script>
+    <script type="text/javascript" src="{{ MEDIA_URL }}js/jquery.easing.compatibility.js"></script>		
+    <script type="text/javascript" src="{{ MEDIA_URL }}js/jquery.cycle.all.min.js"></script>
+    <script type="text/javascript" src="{{ MEDIA_URL }}js/jquery.jeditable.js"></script>		
+    <script type="text/javascript" src="{{ MEDIA_URL }}js/jquery.simplemodal.1.4.js"></script>
+    <script type="text/javascript" src="{{ MEDIA_URL }}js/flexigrid.js"></script>			
+    <script type="text/javascript" src="{{ MEDIA_URL }}js/scraperwiki.js?{{settings.REVISION}}"></script>		
+    <script type="text/javascript" src="{{ MEDIA_URL }}js/language-choice.js?{{settings.REVISION}}"></script>		
+    {% block javascript %}{% endblock %}
 
-        {% comment %}CODEMIRROR_URL doesn't get into this template, unfortunately (only MEDIA_URL does){% endcomment %}
-		<script type="text/javascript" src="{{ MEDIA_URL }}CodeMirror-0.65/js/codemirror.js"></script>
+    <link rel="stylesheet" type="text/css" href="{{ MEDIA_URL }}css/jquery-ui.css" />
+    <link rel="stylesheet" type="text/css" href="{{ MEDIA_URL }}css/flexigrid.css" />
+    <link rel="stylesheet" type="text/css" href="{{ MEDIA_URL }}css/main.css?{{settings.REVISION}}" />
+    {% block css %}{% endblock %}   
 
-		<script type="text/javascript" src="{{ MEDIA_URL }}js/scraperwiki.js"></script>		
-	    <link rel="stylesheet" type="text/css" href="{{ MEDIA_URL }}css/flexigrid.css" />
-	    <link rel="stylesheet" type="text/css" href="{{ MEDIA_URL }}css/main.css" />
-	    {% block css %}{% endblock %}
-	    {% block rss %}{% endblock %}
-	    <title>{% block title %}{% endblock %} | ScraperWiki</title>
-	</head>
-	<body{% if grey_body %} class="bold_body"{% endif %}>
+    {% block rss %}{% endblock %}
+
+    <title>{% block title %}{% endblock %} | ScraperWiki</title>
+</head>
+
+	<body>
 	    <div class="banner">
 	        <ul class="user_menu">
 				{% if user.is_authenticated %}
-				  <li>signed in as <a href="{% url profiles_profile_detail user.username %}">{{user.username}}</a></li>
-				  <li>{{ user.scraper_set.owned_count }}
+				  <li>signed in as <a href="{% url profiles_profile_detail user.username %}">{% if user.get_profile.name %}{{user.get_profile.name}}{% else %}{{user.username}}{% endif %}</a></li>
+				  {% comment %}
+				  <li><a href="{% url dashboard %}">{{ user.code_set.owned_count }}
 				     {% ifnotequal user.scraper_set.owned_count 1 %}
 				        scrapers
 				     {% else %}
 				        scraper
-				     {% endifnotequal %}
+				     {% endifnotequal %}</a>
 				     <!--
 				     {% ifnotequal user.scraper_set.owned_count 0 %}
 				        ({{user.scraper_set.owned_good_count}}) OK
 				     {% endifnotequal %}
 				     -->
 				 </li>
+				 {% endcomment %}
 				 <li><a href="{% url logout %}?next_page=/">sign out</a></li>
 				{% else %}
 					<li><a href="{% url login %}?next=/">Sign in or create an account</a></li>
 				{% endif %}
 				<li class="helplink"><a href="{% url help %}">Help</a></li>
-			</ul>
-			<p>
-    	        Hello! This is the beta version of ScraperWiki, please <a href="{% url contact_form %}">tell us what you think</a>.
-            </p>
+ 			</ul>
+			<p>{{site_message}}</p>
 	    </div>
 
 	    {# Header #}
 	    <div id="divHeader">
-                
                 <div id="divLogo">
-                    {% if not hide_logo %}
-    					<p>
-    					    <a href="{% url frontpage %}"><span class="hide">ScraperWiki</span></a>
-    				    </p>
-				    {% endif %}
+					<p>
+					    <a href="{% url frontpage %}"><span class="hide">ScraperWiki</span></a>
+				    </p>
 				</div>
-			
 			<div id="divMenu">
 			    <ul class="main_menu">
-				    <li>
-				        <a href="{% url editor %}" title="Create a new screen scraper">Create a scraper</a>
+			        <li>
+				        <a href="{% url dashboard %}" title="Manage your scrapers" class="dashboard">Your dashboard</a>
 				    </li>
 				    <li>
-				        <a href="{% url scraper_list %}" title="Browse scrapers and data">Browse data</a>
+				        <a href="{% url choose_template 'scraper' %}" title="Create a new screen scraper" class="editor_scraper">New scraper</a>
 				    </li>
 				    <li>
-				        <a href="{% url market_solicitation %}" title="Request a new scraper">Request data</a>
+				        <a href="{% url get_involved %}" title="Create a new screen scraper">Get involved!</a>
 				    </li>
+                    <li>
+			             <a href="{% url help_tutorials %}" title="Tutorials">Tutorials</a>
+			        </li>
+				    <li>
+				        <a href="{% url scraper_list %}scrapers" title="Browse all scrapers">Browse</a>
+				    </li>
+                    {% if user.is_staff %}
+  				    <li>
+				        <a href="{% url running_scrapers %}" title="Interact with current UML status" class="staff">UML status</a>
+				    </li>
+                    {% endif %}
 				    <li class="last">
 				        <a href="{% url api:index %}" title="ScraperWiki API">API</a>
 				    </li>
 				</ul>
 
+                <form id="divSidebarSearch" action="/search/" method="post">
+                    <input type="text" id="q" name="q"/>
+                    <input type="submit" value="Go" />
+                </form>
+                <ul class="sub_menu">
+                    <li><a href="{% url about %}" title="About ScraperWiki">About ScraperWiki</a></li>
+                    <li><a href="{% url help_code_documentation %}">Documentation</a></li>
+                    <li><a href="http://blog.scraperwiki.com" title="ScraperWiki Data Blog">Read our blog</a></li>
+                    <li><a href="{% url contact_form %}" title="Feedback form">Feedback</a></li>
+                    <li><a href="http://groups.google.com/group/scraperwiki" title="Google groups">Email list</a></li>
+                    <li><a href="http://twitter.com/scraperwiki" title="Follow us on Twitter">Twitter</a></li>
+                </ul>
 			</div>
-			<div id="divInfo">
+	    </div>
+
+	    {% block above_page %}{% endblock %}		    
+
+		<div id="divPage">
+		    <div id="divInfo">
 		        {% if info_messages %}
                      <ul>
                          {% for info in info_messages %}
@@ -88,7 +114,6 @@
                  {% endif %}
                  {% if notifications %}
                  <ul>
-		     
                      {% for message in notifications %}
                  	{% if forloop.first %} {% comment %} Just get the first notification - otherwise login message displays twice, strange bug {% endcomment %}
                         <li {% if message.tags %}class="{{ message.tags }}"{% endif %}>{{ message }}</li>
@@ -96,6 +121,9 @@
                      {% endfor %}
                  </ul>
                  {% endif %}
+                 {% block info %}
+
+       		     {% endblock %}
     		</div>
 		    <div id="divErrors">
 		        {% if error_messages %}
@@ -109,12 +137,14 @@
 		            
     		    {% endblock %}		    
     		</div>
-	    </div>
-	    {% block above_page %}{% endblock %}		    
-		<div id="divPage">
+    		
+    		<div class="page_tabs">
+                {% block tabs %}{% endblock %}
+            </div>
+            
 		    <div id="divContent">
-          
-  		    {% block content %}{% endblock %}
+  		        {% block content %}{% endblock %}
+  		        <br class="clear"/>
 		    </div>
 		</div>			
 		{% block footer %}
@@ -133,40 +163,42 @@
 		           <dd>
 		             <ul>
 		                 <li><a href="{% url scraper_list %}">Browse data &amp; scrapers</a></li>
-		                 <li><a href="{% url market_list %}">Request a dataset</a></li>		                 
-		                 <li><a href="{% url editor %}">Create a scraper</a></li>		                 		                 
+		                 <li><a href="{% url market_list %}">Request a dataset</a></li>
+                         <li><a href="#" class="editor_scraper">Create a scraper</a></li>
+                         {% if user.is_staff %}
+                           <li><a href="#" class="editor_view">Create a view</a></li>		                 
+                         {% endif %}
+		                 <li><a href="{% url api:index %}">API</a></li>
 		             </ul>
 		           </dd>
-		           <dt>Reuse the data</dt>
+		           <!--<dt>Reuse the data</dt>
 		           <dd>
 		             <ul>
 		                 <li><a href="{% url api:index %}">API</a></li>
 		                 <li><a href="{% url api:libraries %}">Code libraries</a></li>			                 
 		             </ul>
-		            </dd>
+		            </dd>-->
 		           <dt>Help &amp; support</dt>
 		           <dd>
 		             <ul>
 			                 <li><a href="{% url contact_form %}">Contact us</a></li>
-			                 <li><a href="{% url help %}">Help</a></li>	
-			                 <li><a href="{% url help_tutorials%}">Tutorials</a></li>	
+			                 <li><a href="{% url help %}">FAQ</a></li>	
+			                 <li><a href="{% url whitelist_user %}">Whitelist</a></li>	
 			                 <li><a href="{% url help_code_documentation %}">Code documentation</a></li>			                 
 			                 <li><a href="http://groups.google.com/group/scraperwiki">Developers' discussion group</a></li>			                   			                 
 			             </ul>
 		           </dd>
 		       </dl>
-                <a id="a4IP" href="http://www.4ip.org.uk">
-			        <img src="{{ MEDIA_URL }}images/4ip.png" title="Supported by 4iP Logo" alt="4iP" height="85" width="100"/>
-			    </a>
 				<div id="divCopyright">
 				        &copy; ScraperWiki Ltd
 				</div>
 			</div>
 		{% endblock %}
 		
-	    <script type="text/javascript" defer="defer">
-	        {% block run_script %}{% endblock %}
-        </script>
+<script type="text/javascript" defer="defer">
+    {% block run_script %}{% endblock %}
+</script>
+
         {% if not debug %}
             <script type="text/javascript">
                 var gaJsHost = (("https:" == document.location.protocol) ? "https://ssl." : "http://www.");

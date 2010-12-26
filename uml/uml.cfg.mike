@@ -2,10 +2,35 @@
 host	= 192.168.1.66
 port	= 9000
 umllist	= uml001
+confurl	= http://localhost:8000/whitelist/config
+path	= /scraperwiki/live/scrapers,/scraperwiki/live/scraperlibs
+
+[twister]
+statusurl = http://localhost:8000/scrapers/twister/status
+
+[webproxy]
+host	= 192.168.1.66
+port	= 9002
+dbhost	= 192.168.1.66
+user	= scraperwiki
+passwd	= scraperwiki
+db	= scraperwiki_cache
 
 [httpproxy]
 host	= 192.168.1.66
-port	= 9002
+port	= 9005
+dbhost	= 192.168.1.66
+user	= scraperwiki
+passwd	= scraperwiki
+db	= scraperwiki_cache
+
+[httpsproxy]
+host	= 192.168.1.66
+port	= 9006
+dbhost	= 192.168.1.66
+user	= scraperwiki
+passwd	= scraperwiki
+db	= scraperwiki_cache
 
 [ftpproxy]
 host	= 192.168.1.66
@@ -18,6 +43,13 @@ port	= 9003
 user	= scraperwiki
 passwd	= scraperwiki
 db	= scraperwiki_datastore
+secure	= 192.168.1.66
+
+#dbtype	= sqlite3
+#db	= /tmp/%{scraperid}.sq3
+
+[metadata]
+host    = 192.168.1.66
 
 [swlogger]
 host	= 192.168.1.66

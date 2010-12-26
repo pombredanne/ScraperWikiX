@@ -16,42 +16,43 @@ http://djangoadvent.com/1.2/natural-keys/
 """
 
 from django.dispatch import dispatcher
+from django.contrib.auth.models import User
 from south.signals import post_migrate
 from frontend import models as frontend
-from scraper import models as scraper
 from market import models as market
 
 def create_alert_types(*args, **kwargs):
     if kwargs['app'] == 'frontend':        
         existing_pks = []
+        alert_types = []
         # Scraper alerts:
-        content_pk = scraper.Scraper().content_type()
-        alert_types = [
-            {
-                "content_pk" : content_pk,
-                "name": "run_fail", 
-                "applies_to": "contribute", 
-                "label": "When a scraper I contribute to fails",
-            },
-            {
-                "content_pk" : content_pk,
-                "name": "commit", 
-                "applies_to": "contribute", 
-                "label": "When the code in a scraper I contribute to is changed"
-            },
-            {
-                "content_pk" : content_pk,
-                "name": "run_success", 
-                "applies_to": "contribute", 
-                "label": "When a scraper I contribute to is run"
-            },
-            {
-                "content_pk" : content_pk,
-                "name": "scraper_comment",
-                "applies_to": "contribute",
-                "label": "New comments on scrapers I contribute to"
-            },
-        ]
+        #content_pk = scraper.Scraper().content_type()
+        #alert_types += [
+        #    {
+        #        "content_pk" : content_pk,
+        #        "name": "run_fail", 
+        #        "applies_to": "contribute", 
+        #        "label": "When a scraper I contribute to fails",
+        #    },
+        #    {
+        #        "content_pk" : content_pk,
+        #        "name": "commit", 
+        #        "applies_to": "contribute", 
+        #        "label": "When the code in a scraper I contribute to is changed"
+        #    },
+        #    {
+        #        "content_pk" : content_pk,
+        #        "name": "run_success", 
+        #        "applies_to": "contribute", 
+        #        "label": "When a scraper I contribute to is run"
+        #    },
+        #    {
+        #        "content_pk" : content_pk,
+        #        "name": "scraper_comment",
+        #        "applies_to": "contribute",
+        #        "label": "New comments on scrapers I contribute to"
+        #    },
+        #]
 
         # Market alerts:
         content_pk = market.Solicitation().content_type()
@@ -91,3 +92,16 @@ def create_alert_types(*args, **kwargs):
                 alert.delete()
 
 post_migrate.connect(create_alert_types)
+
+def add_user_profile_to_super_user(*args, **kwargs):
+    """
+    The super user created by the syncdb process is
+    created before the UserProfile model has been
+    migrated.
+    """
+    if kwargs['app'] == 'frontend':
+        for user in User.objects.all():
+            if user.userprofile_set.count() == 0:
+                frontend.create_user_profile(User, user, True)
+
+post_migrate.connect(add_user_profile_to_super_user)

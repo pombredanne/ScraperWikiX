@@ -1,8 +1,11 @@
 from django.conf.urls.defaults import *
-from profiles import views as profile_views
+
+
+from profiles import views as profile_views  # a not very well namespaced django plugin class
 from contact_form.views import contact_form
-import frontend.views as frontend_views
+import frontend.views as frontend_views  # who thinks replacing dots with underscores here is useful?? --JT
 import frontend.forms as frontend_forms
+
 from django.views.generic.simple import direct_to_template
 
 urlpatterns = patterns('',
@@ -20,7 +23,8 @@ urlpatterns = patterns('',
     url(r'^about/$', 'django.views.generic.simple.direct_to_template', {'template': 'frontend/about.html'}, name='about'),
     url(r'^example_data/$', 'django.views.generic.simple.direct_to_template', {'template': 'frontend/example_data.html'}, name='api'),
     url(r'^help/code_documentation/$', 'django.views.generic.simple.direct_to_template', {'template': 'frontend/code_documentation.html'}, name='help_code_documentation'),
-    url(r'^help/tutorials/$', 'django.views.generic.simple.direct_to_template', {'template': 'frontend/tutorials.html'}, name='help_tutorials'),  
+    url(r'^help/tutorials/$',frontend_views.tutorials, name='help_tutorials'),
+    url(r'^get_involved/$',frontend_views.get_involved, name='get_involved'),
     
     #hello world
     url(r'^hello_world.html', 'django.views.generic.simple.direct_to_template', {'template': 'frontend/hello_world.html'}, name='help_hello_world'),
@@ -30,10 +34,20 @@ urlpatterns = patterns('',
     url(r'^contact/sent/$',               direct_to_template,{ 'template': 'contact_form/contact_form_sent.html' },name='contact_form_sent'),
     
     # user's scrapers
-    url(r'^my-scrapers/$',                  frontend_views.my_scrapers, name='my_scrapers'),
+    url(r'^dashboard/$',                  frontend_views.dashboard, name='dashboard'),
+    url(r'^stats/$',                  frontend_views.stats, name='stats'),    
     
     # Example pages to scrape :)
     url(r'^examples/basic_table\.html$',  direct_to_template,{ 'template': 'examples/basic_table.html' },name='example_basic_table'),
+    
+    #searching and browsing
+    url(r'^search/$', frontend_views.search, name='search'),
+    url(r'^search/(?P<q>.+)/$', frontend_views.search, name='search'),
+
+    url(r'^browse/(?P<page_number>\d+)?$', frontend_views.browse, name='scraper_list'),    
+    url(r'^browse/(?P<wiki_type>scraper|view)s/(?P<page_number>\d+)?$', frontend_views.browse_wiki_type, name='scraper_list_wiki_type'),
+    url(r'^tags/$', frontend_views.tags, name='all_tags'),    
+    url(r'^tags/(?P<tag>[^/]+)$', frontend_views.tag, name='single_tag'),                       
    )
 
 
