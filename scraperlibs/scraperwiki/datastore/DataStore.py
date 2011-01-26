@@ -163,7 +163,7 @@ class DataStoreClass :
 
 
 # manage local copy of the above class in the global space of this module
-# (this function is first called from controller.exec.py where a 3 line config is locally generated)
+# (this function is first called from controller.exec.py where a little 3 line config file is locally generated -- in case you need help with the spaghetti)
 ds = None
 def DataStore (config) :
     global ds
@@ -217,4 +217,19 @@ def retrieve (unique_keys) :
 # experimental sqlite access function
 def sqlitecommand(command, val1=None, val2=None):
     ds = DataStore(None)
-    return ds.request (('sqlitecommand', command, val1, val2))
+    result = ds.request (('sqlitecommand', command, val1, val2))
+    
+    if command == "attach":
+        if result != "ok":
+            raise Exception(result)
+    if command == "execute":
+        if result == "":
+            raise Exception("possible signal timeout")
+        if type(result) in [str, unicode]:
+            raise Exception(result)
+    if command == "commit":
+        if result != "ok":
+            raise Exception(result)
+            
+    return result
+    
