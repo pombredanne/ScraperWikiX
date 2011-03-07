@@ -7,6 +7,7 @@ from django.core.urlresolvers import reverse
 from tagging.models import Tag, TaggedItem
 from django.db import IntegrityError
 from django.contrib.auth.models import User
+from django.contrib.sites.models import Site
 
 from django.conf import settings
 
@@ -86,24 +87,24 @@ def scraperwikitag(scraper, html, panepresent):
         return html
     
     
-    urlscraperoverview = reverse('code_overview', args=[scraper.wiki_type, scraper.short_name])
-    urlscraperedit = reverse('editor_edit', args=[scraper.wiki_type, scraper.short_name])
+    urlbase = "http://www." + Site.objects.get_current().domain;
+    urlscraperoverview = urlbase + reverse('code_overview', args=[scraper.wiki_type, scraper.short_name])
+    urlscraperedit = urlbase + reverse('editor_edit', args=[scraper.wiki_type, scraper.short_name])
     
-    swdivstyle = "border:thin #aaf solid; display:block;width:225px; position:fixed; top:0px; right:0px; background:#eef; "
-    swlinkstyle = "float:right; width:175px; height:20px; background:url(http://www.scraperwiki.com/media/images/powered.png) no-repeat;"
+    swdivstyle = "border:thin #aaf solid; display:block; position:fixed; top:0px; right:0px; background:#eef; margin: 0em; padding: 0.15em; padding-top: 0.3em; "
+    swlinkstyle = "float:right; width:175px; height:20px; background:url(http://www.scraperwiki.com/media/images/powered.png) no-repeat; margin:0; padding: 0;"
     lkbuttonstyle = "font-family:helvetica, arial, sans-serif; font-size:0.8em; position:relative; top:1px; background-color:#f1f1ff; border:solid 1px #bbb; padding:0.0em 0.2em!important; border-radius: 4px; -moz-border-radius: 4px; -webkit-border-radius: 4px;"
-    
+
     if paneversion == "version-1":
-        swpane = [ '<div id="scraperwikipane" style="%s">' % swdivstyle ]
+        swpane = [ '<div id="scraperwikipane" style="%s; width:225px">' % swdivstyle ]
         swpane.append('<b><a href="%s" title="Go to overview page">%s</a></b>' % (urlscraperoverview, scraper.title))
         swpane.append('<br/>')
         swpane.append('<a href="%s" title="Edit source code for this view" style="%s">Edit</a>' % (urlscraperedit, lkbuttonstyle))
-        swpane.append('<a href="/" id="scraperwikipane" style="%s"><span style="display:none">Powered by ScraperWiki</span></a>' % swlinkstyle)
+        swpane.append('<a href="%s" id="scraperwikipane" style="%s"><span style="display:none">Powered by ScraperWiki</span></a>' % (urlbase, swlinkstyle))
         swpane.append('</div>')
     
     else:
-        swdivstyle = "border:thin #aaf solid; width:180px; position:fixed; top:0px; right:0px; background:#eef; "
-        swpane = [ '<div id="scraperwikipane" style="%s">' % swdivstyle ]
+        swpane = [ '<div id="scraperwikipane" style="%s; width:180px;">' % swdivstyle ]
         swpane.append('<a href="%s" id="scraperwikipane" style="%s"><span style="display:none">Powered by ScraperWiki</span></a>' % (urlscraperoverview, swlinkstyle))
         swpane.append('</div>')
 
@@ -179,12 +180,12 @@ def rpcexecute(request, short_name, revision=None):
     if not response:
         response = HttpResponse('no output for some unknown reason')
         
-    # now decide about inserting the powered by scraperwiki panel (avoid doint it on json)
+    # now decide about inserting the powered by scraperwiki panel (avoid doing it on json)
     if not panepresent["scraperwikipane"]:
         firstcode = "".join(panepresent["firstfivelines"]).strip()
         if not re.match("[\w_\s=]*[\(\[\{]", firstcode):
             if re.search("(?i)<\s*(?:b|i|a|h\d|script|ul|table).*?>", firstcode):
-                response.write(scraperwikitag(scraper, '<div id="scraperwikipane" class="version-1"/>', panepresent))
+                response.write(scraperwikitag(scraper, '<div id="scraperwikipane" class="version-2"/>', panepresent))
     
     return response
                 
