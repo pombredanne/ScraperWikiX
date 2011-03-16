@@ -16,6 +16,7 @@ import textile
 import random
 from django.conf import settings
 from django.utils.encoding import smart_str
+import urllib
 
 from managers.datastore import DataStore
 
@@ -100,7 +101,7 @@ def scraper_overview(request, short_name):
         'license_choices': models.LICENSE_CHOICES,
         }
     
-    #get data for this scaper in a way that we can see exactly what is being transferred
+            # to be deprecated when old style datastore is abolished
     column_order = scraper.get_metadata('data_columns')
     if not user_owns_it:
         private_columns = scraper.get_metadata('private_columns')
@@ -120,7 +121,6 @@ def scraper_overview(request, short_name):
     
     if data['rows']:
         context['datasinglerow'] = zip(data['headings'], data['rows'][0])
-    
     context['data'] = data
     
     try:
@@ -131,6 +131,24 @@ def scraper_overview(request, short_name):
     except:
         pass
     
+    # put in ckan connections
+    if request.user.is_staff:
+        try:
+            dataproxy.request(("sqlitecommand", "attach", "ckan_datastore", "src"))
+            ckansqlite = "select src.records.ckan_url, src.records.notes from src.resources left join src.records on src.records.id=src.resources.records_id  where src.resources.scraperwiki=?"
+            lsqlitedata = dataproxy.request(("sqlitecommand", "execute", ckansqlite, (scraper.short_name,)))
+            if lsqlitedata.get("data"):
+                context['ckanresource'] = dict(zip(lsqlitedata["keys"], lsqlitedata["data"][0]))
+        except:
+            pass
+            
+        if context.get('sqlitedata') and "ckanresource" not in context:
+            ckanparams = {"name":scraper.short_name, "title":scraper.title, "url":settings.MAIN_URL+reverse('code_overview', args=[scraper.wiki_type, short_name])}
+            ckanparams["resources_url"] = settings.MAIN_URL+reverse('export_sqlite', args=[scraper.short_name])
+            ckanparams["resources_format"] = "Sqlite"
+            ckanparams["resources_description"] = "Scraped data"
+            context["ckansubmit"] = "http://ckan.net/package/new?%s" % urllib.urlencode(ckanparams)
+
     return render_to_response('codewiki/scraper_overview.html', context, context_instance=RequestContext(request))
 
 
