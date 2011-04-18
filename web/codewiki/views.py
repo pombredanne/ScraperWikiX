@@ -22,6 +22,11 @@ import datetime
 try:                import json
 except ImportError: import simplejson as json
 
+PRIVACY_STATUSES_UI = [ ('public', 'can be edited by anyone who is logged on'),
+                        ('visible', 'can only be edited by those listed as editors'), 
+                        ('private', 'cannot be seen by anyone except for the designated editors'), 
+                        ('deleted', 'is deleted') 
+                      ]
 
 def listolddatastore(request):
     dataproxy = DataStore("junk", "test")
@@ -85,13 +90,8 @@ def getscraperor404(request, short_name, action):
 def comments(request, wiki_type, short_name):
     scraper = getscraperorresponse(request, wiki_type, short_name, "scraper_comments", "comments")
     if isinstance(scraper, HttpResponse):  return scraper
-    
     context = {'selected_tab':'comments', 'scraper':scraper }
-    context["scraper_tags"] = scraper.gettags()
-    context["user_owns_it"] = (scraper.owner() == request.user)
-    
     return render_to_response('codewiki/comments.html', context, context_instance=RequestContext(request))
-
 
 def scraper_history(request, wiki_type, short_name):
     scraper = getscraperorresponse(request, wiki_type, short_name, "scraper_history", "history")
@@ -134,8 +134,6 @@ def scraper_history(request, wiki_type, short_name):
     return render_to_response('codewiki/history.html', context, context_instance=RequestContext(request))
 
 
-
-
 def code_overview(request, wiki_type, short_name):
     scraper = getscraperorresponse(request, wiki_type, short_name, "code_overview", "overview")
     if isinstance(scraper, HttpResponse):  return scraper
@@ -148,8 +146,10 @@ def code_overview(request, wiki_type, short_name):
     context["user_owns_it"] = (request.user in context["userrolemap"]["owner"])
     context["user_edits_it"] = (request.user in context["userrolemap"]["owner"]) or (request.user in context["userrolemap"]["editor"])
     
-    context["PRIVACY_STATUSES"] = models.PRIVACY_STATUSES[:-1]  # miss out the deleted mode
-    context["privacy_status_name"] = dict(models.PRIVACY_STATUSES).get(scraper.privacy_status)
+    context["PRIVACY_STATUSES"] = PRIVACY_STATUSES_UI[0:2]  
+    if request.user.is_staff:
+        context["PRIVACY_STATUSES"] = PRIVACY_STATUSES_UI[0:3]  
+    context["privacy_status_name"] = dict(PRIVACY_STATUSES_UI).get(scraper.privacy_status)
     
     # view tpe
     if wiki_type == 'view':
@@ -213,7 +213,26 @@ def scraper_admin_privacystatus(request, short_name):
     scraper = getscraperor404(request, short_name, "set_privacy_status")
     scraper.privacy_status = request.POST.get('value', '')
     scraper.save()
-    return HttpResponse(dict(models.PRIVACY_STATUSES)[scraper.privacy_status])
+    return HttpResponse(dict(PRIVACY_STATUSES_UI)[scraper.privacy_status])
+
+def scraper_admin_controleditors(request, short_name):
+    scraper = getscraperor404(request, short_name, "set_controleditors")
+    username = request.GET.get('roleuser', '')
+    lroleuser = User.objects.filter(username=username)
+    if not lroleuser:
+        return HttpResponse("Failed: username '%s' not found" % username)
+    roleuser = lroleuser[0]
+    newrole = request.GET.get('newrole', '')
+    if newrole not in ['editor', 'follow']:
+        return HttpResponse("Failed: role '%s' unrecognized" % newrole)
+    if models.UserCodeRole.objects.filter(code=scraper, user=roleuser, role=newrole):
+        return HttpResponse("Failed: user is already '%s'" % newrole)
+    newuserrole = scraper.set_user_role(roleuser, newrole)
+    context = { "role":newuserrole.role, "contributor":newuserrole.user }
+    context["user_owns_it"] = (request.user in scraper.userrolemap()["owner"])
+    if newuserrole:
+        return render_to_response('codewiki/includes/contributor.html', context, context_instance=RequestContext(request))
+    return HttpResponse("Failed: unknown")
 
 
 def view_admin(request, short_name):
