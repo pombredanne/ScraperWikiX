@@ -1,7 +1,13 @@
 {% extends "frontend/base.html" %}
 
 {% block title %}Help{% endblock %}
+
+{% block header %}
+	<h2>Help - {{mode|capfirst}}</h2>
+{% endblock %}
+
 {% block tabs %}
+    <div class="page_tabs">
         <ul>
             <li{% ifequal mode "libraries" %} class="selected"{% endifequal %}> 
                 <a id="libraries" href="{% url help 'libraries' language|default:"python" %}">Libraries</a> 
@@ -18,33 +24,25 @@
             <li{% ifequal mode "tutorials" %} class="selected"{% endifequal %}> 
                 <a id="tutorials" href="{% url help 'tutorials' language|default:"python" %}">Examples</a> 
             </li>
-        </ul> 
+        </ul>
+    </div>
 {% endblock %}
 
 {% block content %}
-    <div class="page_title">
-        {% ifnotequal mode "faq" %}
-         <p style="float:right; margin:0">See also for
+    <div class="content">
+
+    {% ifnotequal mode "faq" %}
+    <p>
+        You are reading the help for <strong class="language {{language}}">{{display_language}}</strong> 
+         See help also for
          {% for other_language, display_other_language in other_languages %}
          {% if not forloop.first %} or {% endif %}
          <strong class="language {{other_language}}"><a href="{% url help mode other_language %}">{{display_other_language}}</a></strong>{% endfor %}.
-         </p>
-          {% ifequal mode 'tutorials' %}
-            <h1>{{'examples'|capfirst}} - {{display_language}}</h1>
-          {% else %}
-            <h1>{{mode|capfirst}} - {{display_language}}</h1>
-          {% endifequal %}
-        {% else %}
-          <h1>Help - {{mode|capfirst}}</h1>
-        {% endifnotequal %}
-        {% ifequal mode "tutorials" %}
-          <p>Quick and easy examples just to get you started.  Click on one and click "Run" to try it out.
-          You can start editing without any logging in!</p>
-        {% endifequal %}
-    </div>
-    <div class="content">
+    </p>
+    <p>Still confused? Ask a question on our <a href="http://groups.google.com/group/scraperwiki">developers' list</a>.</p>
+    {% endifnotequal %}
 
-    <div id="Dhelp_content">
+    <div id="help_content">
     {% include include_tag %}
     </div>
 
