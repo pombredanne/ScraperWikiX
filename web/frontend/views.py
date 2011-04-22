@@ -4,7 +4,7 @@ from django.shortcuts import render_to_response
 from django.contrib import auth
 from django.shortcuts import get_object_or_404
 import settings
-from frontend.forms import SigninForm, UserProfileForm, SearchForm, ResendActivationEmailForm
+from frontend.forms import SigninForm, UserProfileForm, SearchForm, ResendActivationEmailForm, DataEnquiryForm
 from django.core.paginator import Paginator, InvalidPage, EmptyPage
 from django.contrib.auth.models import User
 from django.contrib.auth import logout
@@ -41,17 +41,20 @@ def frontpage(request, public_profile_field=None):
     user = request.user
 
     #featured
-    featured_scrapers = Code.objects.filter(featured=True, wiki_type='scraper').exclude(privacy_status="deleted").exclude(privacy_status="private").order_by('-first_published_at')[:2]    
-    featured_views = Code.objects.filter(featured=True, wiki_type='view').exclude(privacy_status="deleted").exclude(privacy_status="private").order_by('-first_published_at')[:2]        
-    
+    featured_both = Code.objects.filter(featured=True).exclude(privacy_status="deleted").exclude(privacy_status="private").order_by('-first_published_at')[:4]
+	
     #popular tags
     #this is a horrible hack, need to patch http://github.com/memespring/django-tagging to do it properly
-    tags_sorted = sorted([(tag, int(tag.count)) for tag in Tag.objects.usage_for_model(Scraper, counts=True)], key=lambda k:k[1], reverse=True)[:10]
+    tags_sorted = sorted([(tag, int(tag.count)) for tag in Tag.objects.usage_for_model(Scraper, counts=True)], key=lambda k:k[1], reverse=True)[:40]
     tags = []
     for tag in tags_sorted:
         tags.append(tag[0])
     
-    data = {'featured_views': featured_views, 'featured_scrapers': featured_scrapers, 'tags': tags, 'language': 'python'}
+    data = {#'featured_views': featured_views, 
+            #'featured_scrapers': featured_scrapers,
+			'featured_both': featured_both,
+            'tags': tags, 
+            'language': 'python'}
     return render_to_response('frontend/frontpage.html', data, context_instance=RequestContext(request))
 
 @login_required
@@ -82,7 +85,8 @@ def profile_detail(request, username):
     profiled_user = get_object_or_404(User, username=username)
     owned_code_objects = scraper_search_query(request.user, None).filter(usercoderole__user=profiled_user)
     solicitations = Solicitation.objects.filter(deleted=False, user_created=profiled_user).order_by('-created_at')[:5]  
-    return profile_views.profile_detail(request, username=username, extra_context={'solicitations': solicitations, 'owned_code_objects': owned_code_objects } )
+    return profile_views.profile_detail(request, username=username, extra_context={'solicitations': solicitations,
+                                                                                   'owned_code_objects': owned_code_objects})
 
 
 def edit_profile(request):
@@ -160,7 +164,10 @@ def login(request):
         registration_form = CreateAccountForm()
         message = None
 
-    return render_to_response('registration/extended_login.html', {'registration_form': registration_form, 'login_form': login_form, 'error_messages': error_messages, 'redirect': redirect}, context_instance = RequestContext(request))
+    return render_to_response('registration/extended_login.html', {'registration_form': registration_form,
+                                                                   'login_form': login_form, 
+                                                                   'error_messages': error_messages,  
+                                                                   'redirect': redirect}, context_instance = RequestContext(request))
 
 def help(request, mode=None, language=None):
     tutorials = {}
@@ -220,6 +227,7 @@ def browse(request, page_number=1, wiki_type=None, special_filter=None):
         else:
             all_code_objects = TaggedItem.objects.get_no_tags(View.objects.exclude(privacy_status="deleted").order_by('-created_at') )
 
+
     # filter out scrapers that have no records
     if not special_filter:
         all_code_objects = all_code_objects.exclude(wiki_type='scraper', scraper__record_count=0)
@@ -264,7 +272,7 @@ def search(request, q=""):
                 'tags': tags,
                 'num_results': num_results,
                 'form': form,
-                'query': q,},
+                'query': q},
             context_instance=RequestContext(request))
 
     # If the form has been submitted, or we have a search term in the URL
@@ -278,14 +286,11 @@ def search(request, q=""):
             return HttpResponseRedirect('/search/%s/' % urllib.quote(q.encode('utf-8')))
         else:
             form = SearchForm()
-            return render_to_response('frontend/search_results.html', {
-                'form': form,},
+            return render_to_response('frontend/search_results.html', {'form': form},
                 context_instance=RequestContext(request))
     else:
         form = SearchForm()
-        return render_to_response('frontend/search_results.html', {
-            'form': form,
-        }, context_instance = RequestContext(request))
+        return render_to_response('frontend/search_results.html', {'form': form}, context_instance = RequestContext(request))
 
 def get_involved(request):
 
@@ -335,7 +340,7 @@ def get_involved(request):
             'solicitation_percent': solicitation_percent,
             'scraper_sick_count': scraper_sick_count,
             'scraper_sick_percent': scraper_sick_percent,
-            'language': 'python',
+            'language': 'python', 
         }
 
         return render_to_response('frontend/get_involved.html', data, context_instance=RequestContext(request))
@@ -366,7 +371,7 @@ def tags(request):
 
     tags = _get_merged_tags()
 
-    return render_to_response('frontend/tags.html', {'tags':tags,}, context_instance=RequestContext(request))
+    return render_to_response('frontend/tags.html', {'tags':tags}, context_instance=RequestContext(request))
     
 def tag(request, tag):
     tag = get_tag(tag)
@@ -403,7 +408,7 @@ def tag(request, tag):
         'solicitations_open':solicitations_open,
         'solicitations_pending':solicitations_pending,
         'solicitations_percent_complete': solicitations_percent_complete,
-        'scrapers_fixed_percentage': scrapers_fixed_percentage,
+        'scrapers_fixed_percentage': scrapers_fixed_percentage
     }, context_instance = RequestContext(request))
 
 def resend_activation_email(request):
@@ -421,3 +426,7 @@ def resend_activation_email(request):
             print ex
 
     return render_to_response(template, {'form': form}, context_instance = RequestContext(request))
+
+def request_data(request):
+    form = DataEnquiryForm()
+    return render_to_response('frontend/request_data.html', {'form': form}, context_instance = RequestContext(request))

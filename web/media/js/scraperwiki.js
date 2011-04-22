@@ -29,10 +29,147 @@ function setupSearchBoxHint(){
     });
     $('#divSidebarSearch input:text').blur();
 }
-$(document).ready(function()
-{
-    setupSearchBoxHint(); 
-}); 
+$(function(){  }); 
+
+function setupNavSearchBoxHint(){
+    $('#navSearch input:text').focus(function() {
+        if ($('#navSearch input:submit').attr('disabled')) {
+            $(this).val('');
+            $(this).removeClass('hint');
+            $('#navSearch input:submit').removeAttr('disabled'); 
+        }
+		$('#navSearch').addClass('focus');
+    });
+    $('#navSearch input:text').blur(function() {
+        if(!$('#navSearch input:submit').attr('disabled') && ($(this).val() == '')) {
+            $(this).val('Search datasets');
+            $(this).addClass('hint');
+            $('#navSearch input:submit').attr('disabled', 'disabled'); 
+        }
+		$('#navSearch').removeClass('focus');
+    });
+    $('#navSearch input:text').blur();
+}
+
+
+
+$(function(){ 
+	
+	setupSearchBoxHint();
+	setupNavSearchBoxHint();
+	
+	function developer_show(){
+		$('#intro_developer, #intro_requester, #blob_requester').fadeOut(500);
+		$('#more_developer_div').fadeIn(500);
+		$('#blob_developer').animate({left: 760}, 1000, 'easeOutCubic').addClass('active');
+	}
+	
+	function developer_hide(){
+		$('#intro_developer, #intro_requester, #blob_requester').fadeIn(500);
+		$('#more_developer_div').fadeOut(500);
+		$('#blob_developer').animate({left: 310}, 1000, 'easeOutCubic').removeClass('active');
+	}
+	
+	function requester_show(){
+		$('#intro_developer, #intro_requester, #blob_developer').fadeOut(500);
+		$('#more_requester_div').fadeIn(500);
+		$('#blob_requester').animate({left: 10}, 1000, 'easeOutCubic').addClass('active');
+	}
+	
+	function requester_hide(){
+		$('#intro_developer, #intro_requester, #blob_developer').fadeIn(500);
+		$('#more_requester_div').fadeOut(500);
+		$('#blob_requester').animate({left: 460}, 1000, 'easeOutCubic').removeClass('active');
+	}
+	
+	$('#blob_developer').css('cursor', 'pointer').bind('click', function(){
+	    if($(this).is('.active')){
+	        developer_hide();
+	    } else {
+	        developer_show();
+	    }
+	    return false;
+	});
+	
+	$('#blob_requester').css('cursor', 'pointer').bind('click', function(){
+	    if($(this).is('.active')){
+	        requester_hide();
+	    } else {
+	        requester_show();
+	    }
+	    return false;
+	});
+	
+	$('#more_developer, #intro_developer').css('cursor', 'pointer').bind('click', function(){
+		developer_show();
+		return false;
+	});
+
+	$('#more_requester, #intro_requester').css('cursor', 'pointer').bind('click', function(){
+		requester_show();
+		return false;
+	});
+	
+	$('#more_developer_div .back').live('click', function(){
+		developer_hide();
+		return false;
+	});	
+	$('#more_requester_div .back').live('click', function(){
+		requester_hide();
+		return false;
+	});
+	
+	function requestOption($a){
+		
+		function requestOptionInner($a){
+			$d = $a.parent().next();
+			id = $d.attr('id');
+			$a.addClass('selected').parent().next().slideDown(250);
+			$('#request_options h3 a.selected').not($a).removeClass('selected');
+			$('#request_options div:visible').not($d).slideUp(250);
+			if(id == 'private'){
+				show = '.urls, .columns, .frequency, .due_date, .name, .email';
+			} else if(id == 'viz'){
+				show = '.urls, .columns, .frequency, .due_date, .visualisation, .name, .email, .telephone';
+			} else if(id == 'app'){
+				show = '.urls, .columns, .frequency, .due_date, .name, .email';
+			} else if(id == 'etl'){
+				show = '.description, .name, .email, .telephone, .company_name';
+			} else {
+				show = '.urls, .columns, .frequency, .due_date, .name, .email, .broadcast';
+			}
+			$(show, $('#request_form')).filter(':hidden').slideDown(250);
+			$('#request_form li').not(show).slideUp(250);
+		}
+		
+		if($('#request_intro').is(':visible')){
+			$('#request_intro:visible').fadeOut(200, function(){
+				$('#request_form:hidden').fadeIn(200, function(){
+					requestOptionInner($a)
+				});
+			});	
+		} else {
+			requestOptionInner($a)
+		}
+		
+	}
+	
+//	requestOption($('#request_options h3:first a'));
+		
+	$('#request_options h3 a').bind('click', function(e){
+		e.preventDefault();
+		requestOption($(this));
+	}).each(function(){
+		h = $(this).outerHeight();
+		$('<span>').addClass('arrow').css('border-width', h/2 + 'px 10px ' + h/2 + 'px 0px').attr('title',h).appendTo($(this));
+	});
+	
+	
+	
+});
+
+
+
 
 function setupScroller(){
     
