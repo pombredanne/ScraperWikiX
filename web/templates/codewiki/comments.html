@@ -5,14 +5,12 @@
 {% load gravatar %}
 <a href="/feeds/code_object_comments/{{ scraper.short_name }}">RSS feed of discussion</a>
 
-
-
 {% if user.is_authenticated %}
  
     {% get_comment_form for scraper as form %}
 <h4>Add a comment or question about this scraper or the data it produces</h4>
 <form action="{% comment_form_target %}" method="post" class="add_comment">
-    <input type="hidden" name="next" value="{% url  scraper_comments scraper.wiki_type scraper.short_name %}" />    
+    <input type="hidden" name="next" value="{% url scraper_comments scraper.wiki_type scraper.short_name %}" />    
    {% show_gravatar user 'medium' %}
    <div>
     	<textarea name="comment" id="id_comment" rows="3"></textarea>
@@ -38,7 +36,7 @@
             {{ comment.comment|escape|urlizetrunc:"100"|linebreaks }}
         </p>
         <small>
-            Added by <a href="{% url profiles_profile_detail comment.name %}">{{ comment.name|escape }}</a> at {{ comment.submit_date|timesince }} ago
+            Added by <a href="{% url profiles_profile_detail comment.user.username %}">{{ comment.name|escape }}</a> at {{ comment.submit_date|timesince }} ago
         </small>
     </div>
  {% endfor %} 

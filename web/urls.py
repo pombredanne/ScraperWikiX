@@ -8,8 +8,10 @@ from django.views.generic import date_based, list_detail
 from django.views.generic.simple import direct_to_template
 from django.contrib import admin
 import django.contrib.auth.views as auth_views
-from editor import views as editor_views
 import settings
+
+from django.core.urlresolvers import reverse
+from django.http import HttpResponseRedirect, HttpResponsePermanentRedirect
 
 from django.contrib import admin
 admin.autodiscover()
@@ -25,13 +27,16 @@ feeds = {
 
 urlpatterns = patterns('',
     url(r'^$', frontend_views.frontpage, name="frontpage"), 
-    url(r'^(?P<wiki_type>scraper|view)s/new/(?P<language>[\w]+)$', editor_views.edit, name="editor"),
-    url(r'^(?P<wiki_type>scraper|view)s/(?P<short_name>[\w_\-]+)/edit/$', editor_views.edit, name="editor_edit"),    
+    
+    # redirects from old version (would clashes if you happen to have a scraper whose name is list!)
+    (r'^scrapers/list/$', lambda request: HttpResponseRedirect(reverse('scraper_list_wiki_type', args=['scraper']))),
+
     url(r'^', include('codewiki.urls')),    
-    url(r'^editor/', include('editor.urls')),
     url(r'^logout/$', auth_views.logout, {'next_page': '/'}, name="logout"), 
     url(r'^accounts/', include('registration.urls')),
+    url(r'^accounts/resend_activation_email/', frontend_views.resend_activation_email, name="resend_activation_email"),
     url(r'^comments/', include('django.contrib.comments.urls')),
+    url(r'^captcha/', include('captcha.urls')),
     
     # allows direct viewing of the django tables
     url(r'^admin/(.*)', admin.site.root, name="admin"),
@@ -60,10 +65,20 @@ urlpatterns = patterns('',
     # Black/Whitelist management
     (r'^whitelist/', include('whitelist.urls')),
     
+    # pdf cropper technology
+    (r'^cropper/', include('cropper.urls')),
+    
     # static media server for the dev sites / local dev
     url(r'^media/(?P<path>.*)$',       'django.views.static.serve', {'document_root': settings.MEDIA_DIR, 'show_indexes':True}),
     url(r'^media-admin/(?P<path>.*)$', 'django.views.static.serve', {'document_root': settings.MEDIA_ADMIN_DIR, 'show_indexes':True}),
 
     #Rest of the site
     url(r'^', include('frontend.urls')),
+
+    # redirects from old version
+    (r'^editor/$', lambda request: HttpResponseRedirect('/scrapers/new/python?template=tutorial_python_trivial')),
+    (r'^scrapers/show/(?P<short_name>[\w_\-]+)/(?:data/|map-only/)?$', 
+                   lambda request, short_name: HttpResponseRedirect(reverse('code_overview', args=['scraper', short_name]))),
+#    http://scraperwiki.com/scrapers/epsrc-grants-1/
+    
 )

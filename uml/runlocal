@@ -3,8 +3,32 @@
 #  Run the dispatcher, proxy, firebox and controller servers locally, .ie.,
 #  without using a real UML
 #
-mkdir -p ./var/log
-mkdir -p ./var/run
+[ -f uml.cfg ] || {
+	echo	"runlocal: uml.cfg not found"
+	exit	1
+	}
+
+cmp -s uml.cfg uml.cfg.local || {
+	echo	"runlocal: uml.cfg different to uml.cfg.local"
+	exit	1
+	}
+
+# XXX I think we have to have a copy of uml.cfg here (not a symlink) as it runs
+# inside the UML, and is mounted somehow. Please clarify :)
+[ -f controller/uml.cfg ] || {
+	echo	"runlocal: controller/uml.cfg not found"
+	exit	1
+	}
+
+[ -h controller/uml.cfg ] && {
+	echo	"runlocal: controller/uml.cfg must not be a symbolic link"
+	exit	1
+	}
+
+rm	-rf	./var/log
+rm	-rf	./var/run
+mkdir 	-p 	./var/log
+mkdir 	-p 	./var/run
 
 ./etc/local.d/controller	restart
 ./etc/local.d/dataproxy		restart

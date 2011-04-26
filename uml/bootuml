@@ -17,11 +17,11 @@ test -e uml.cfg ||
 	exit	1
 }
 
-test `id -u` = 0 ||
-{
-	echo	bootuml: must be run as root
-	exit	1
-}
+#test `id -u` = 0 ||
+#{
+#	echo	bootuml: must be run as root
+#	exit	1
+#}
 
 unm=$1
 
@@ -45,11 +45,6 @@ cmp -s uml.cfg controller/uml.cfg ||
 	ln $cfg controller/uml.cfg
 }
 
-cmp -s swlogger/swlogger.py controller/swlogger.py ||
-{
-	rm -f controller/swlogger.py
-	ln swlogger/swlogger.py controller/swlogger.py
-}
 
 rm	-f ${unm}/*.cow
 

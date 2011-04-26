@@ -3,6 +3,7 @@ host	= 212.84.75.28
 port	= 9000
 umllist	= uml001
 confurl	= http://dev.scraperwiki.com/whitelist/config
+path	= /scraperwiki/live/scrapers,/scraperwiki/live/scraperlibs
 
 [twister]
 statusurl = http://dev.scraperwiki.com/scrapers/twister/status
@@ -42,15 +43,12 @@ port	= 9003
 user	= datastore
 passwd	= 3jFjLrje6dFJ7cQE
 db	= scraperwiki_datastore_dev
+secure	= 212.84.75.28
+resourcedir = /var/www/scraperwiki/resourcedir
+max_api_distance = 10
 
 [metadata]
 host    = dev.scraperwiki.com
-
-[swlogger]
-host	= 212.84.75.28
-user	= scraperlog
-passwd	= scr4p3rl0g
-db	= scraperwiki_log
 
 [ubuntu]
 host	= 212.84.75.28

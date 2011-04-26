@@ -24,59 +24,33 @@ import firestarter
 
 def execute (code, options) :
 
-    # small transform function that used to cgi.escape the messages, 
-    # now it removes the content_long field inserted at in controller.fnExecute
-    # once that stops happening, we can lose this function entirely and simply stream 
-    # the data across from the controller
-    def format_json(line):
-        try:
-            message = json.loads(line)
-        except:
-            # this only seems to get one line out when there 
-            message = { 'message_type':'console', 'content': "JSONERROR: %s" % line }
-            
-        if message.get('message_type') == 'console' and message.get('content_long'):
-            message['content'] = message.pop('content_long')
-        return json.dumps(message)
-
-
     fs  = firestarter.FireStarter('/var/www/scraperwiki/uml/uml.cfg')
     cpulimit = int(options.cpulimit)
     
     fs.setTestName      (options.name     )
     fs.setScraperID     (options.guid     )
     fs.setLanguage      (options.language )
+    fs.setUrlquery      (options.urlquery )
     fs.setUser          ('nobody' )
     fs.setGroup         ('nogroup')
 
     fs.setTraceback     ('text')
-    fs.addPaths         ('/scraperwiki/live/scrapers')
-    fs.addPaths         ('/scraperwiki/live/scraperlibs')
+    
     fs.setCache         (3600 * 12)
     fs.setCPULimit      (cpulimit, cpulimit+1)
+    fs.setDraft         (options.draft    )
 
     fs.loadConfiguration()
 
     code = string.replace (code, '\r', '')
-    if options.language == "php" :
-        code = "<?php\n%s\n?>\n" % code
+    
+    for message in fs.execute(code):
+        sys.stdout.write(message + '\r\n')
+        sys.stdout.flush()
 
-    res = fs.execute (code, True)
-    if res is None :
-        sys.stdout.write (json.dumps({ 'message_type' : 'fail', 'content' : fs.error() }) + '\r\n')
-        sys.stdout.flush ()
-        return
-
-    line = res.readline()
-    while line != '' and line is not None :
-        sys.stdout.write (format_json(line) + "\r\n")
-        sys.stdout.flush ()
-        line = res.readline()
-
-
-# You can test this script by typing:
-# echo "print 1" | python runner.py
-
+#  You can test this script by typing:
+#       echo "print 1" | python runner.py
+#
 if __name__ == "__main__":
     
     
@@ -124,6 +98,26 @@ if __name__ == "__main__":
             help    = "Time limit for running script",  
             default = '80',
             metavar = "CPULIMIT"
+        )
+    
+    parser.add_option \
+        (   "-u",
+            "--urlquery",
+            dest    = "urlquery",
+            action  = "store",
+            type    = 'str',
+            help    = "URL query argumentspassed in for a view",  
+            default = '',
+            metavar = "URLQUERY"
+        )
+    
+    parser.add_option \
+        (   "-d",
+            "--draft",
+            dest    = "draft",
+            action  = "store_true",
+            help    = "Run the scraper in draft mode not altering the database",  
+            default = False,
         )
     
     (options, args) = parser.parse_args()

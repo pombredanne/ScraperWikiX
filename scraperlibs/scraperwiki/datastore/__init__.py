@@ -1,7 +1,3 @@
-from datastore import DataStore
-from datastore import save
-from datastore import fetch
-from datastore import retrieve
-
-# need these for the in-scraper unit tests
-#from save import retrieve, delete, insert
+from datastore import DataStore, sqlitecommand, save, save_sqlite, SqliteError, NoSuchTableSqliteError
+from scraperwiki.apiwrapper import getKeys, getData, getDataByDate, getDataByLocation, search
+from scraperwiki.apiwrapper import getInfo, getRunInfo, getUserInfo, scraperSearch

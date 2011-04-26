@@ -1,7 +1,6 @@
 import sys
 import difflib
 import re
-sys.path.append('../../web')
 
 import os
 from django.conf import settings
@@ -13,126 +12,77 @@ import mercurial
 import mercurial.ui
 import mercurial.hg
 
+from django.contrib.auth.models import User
+
+
 
 # The documentation and help strings for this Mercurial interface is inadequate
 # The best bet is to look directly at the source code to work out what attributes exist
 # (although can't be done for repo.commit as this is in hgext.mq, which I can't find)
 # mercurial.commands module is mostly a wrapper on the functionality of the repo object
 
+# this class only used in codewiki/models/code.py
 class MercurialInterface:
-    def __init__(self, repo_path):
+    def __init__(self, repo_path, cloned_from_path=None):
         self.ui = mercurial.ui.ui()
         self.ui.setconfig('ui', 'interactive', 'off')
-        self.ui.setconfig('ui', 'verbose', 'on')
-        self.repopath = os.path.normpath(os.path.abspath(repo_path))  # probably to handle windows values
-        
-        # danger with member copy of repo as not sure if it updates with commits
-        # (definitely doesn't update if commit is done against a second repo object)
-        self.repo = mercurial.hg.repository(self.ui, self.repopath)    
+        self.ui.setconfig('ui', 'verbose', 'off')
+        self.repopath = os.path.normpath(os.path.abspath(repo_path))  # (hg possibly over-sensitive to back-slashes)
+            
+        if not os.path.exists(self.repopath) and cloned_from_path:
+            self.cloned_from_path = os.path.normpath(os.path.abspath(cloned_from_path))  # (hg possibly over-sensitive to back-slashes)
+            mercurial.hg.clone(self.ui, str(self.cloned_from_path), str(self.repopath))
+
+            # danger with member copy of repo as not sure if it updates with commits
+            # (definitely doesn't update if commit is done against a second repo object)
+        self.repo = mercurial.hg.repository(self.ui, self.repopath, create=not os.path.exists(self.repopath))    
     
     
-    def save(self, scraper, code):
-        scraperfolder = os.path.join(self.repopath, scraper.short_name)
-        scraperfile = os.path.join(scraper.short_name, "__init__.py")
-        scraperpath = os.path.join(scraperfolder, "__init__.py")
-        
-        if not os.path.exists(scraperfolder):
-            os.makedirs(scraperfolder)
-        
+    def savecode(self, code):
+        assert os.path.exists(self.repopath)
+        scraperpath = os.path.join(self.repopath, "code")   # 'code' is the default name for the only file in each repo (for now)
         fout = codecs.open(scraperpath, mode='w', encoding='utf-8')
         fout.write(code)
         fout.close()
 
-        # add into mercurial
-        #if scraperfile not in self.repo.dirstate:
-            #self.repo.add([scraperfile])   # note, relative to repopath
-        
     
     # need to dig into the commit command to find the rev
-    def commit(self, scraper, message="changed", user="unknown"): 
-        scraperpath = os.path.join(self.repopath, scraper.short_name, "__init__.py")
+    def commit(self, message, user): 
+        assert os.path.exists(os.path.join(self.repopath, "code"))
+        if "code" not in self.repo.dirstate:
+            self.repo.add(["code"])   
+        
         if message is None:
             message = "changed"
 
-        node = self.repo.commit(message, str(user.pk))  
+        node = self.repo.commit(message, user.username)
         if not node:
             return None
         return self.repo.changelog.rev(node)
-
-    
-    # this function possibly in wrong place (which makes the imports awkward)
-    def updatecommitalertsrev(self, rev):
-        from codewiki.models import Scraper, CodeCommitEvent
-        from frontend.models import Alerts
-        from django.contrib.auth.models import User
-
-        # discard all alerts and commit events for this revision (made complex due to the indirection through CodeCommitEvent for a integer)
-        for codecommitevent in CodeCommitEvent.objects.filter(revision=rev):
-            for alert in Alerts.objects.filter(event_object=codecommitevent):
-                alert.delete()
-            codecommitevent.delete()
         
-        warnings = [ ]
-        
-        ctx = self.repo[rev]
-        commitentry = self.getctxrevisionsummary(ctx)
-        
-        user = None
-        try:    
-            user = User.objects.get(id=int(commitentry["userid"]))
-        except: 
-            warnings.append("Unmatched userid: %s" % commitentry.get("userid"))
-        
-        # there should actually be only one file in this batch, if everything is going right
-        if len(ctx.files()) != 1:
-            warnings.append("More than one file in rev: %s" % ctx.files())
-        for scraperfile in ctx.files():
-            mscraper = re.match("(.*?)/__init__.py", scraperfile)
-            if not mscraper:
-                warnings.append("unrecognized scraperfile: %s" % scraperfile)
-                continue
-            scrapers = Scraper.objects.filter(short_name=mscraper.group(1))
-            if len(scrapers) != 1:
-                warnings.append("scraperfile unmatched to scraper: %s" % scraperfile)
-                continue
-            scraper = scrapers[0]
-    
-            # yes, the allocation of information (eg the date) between the Alert and the CodeCommitEvent looks in fact arbitrary.  
-            codecommitevent = CodeCommitEvent(revision=rev)
-            codecommitevent.save()
-            alert = Alerts(content_object=scraper, message_type='commit', message_value=commitentry["description"], 
-                           user=user, event_object=codecommitevent, datetime=commitentry["date"])
-            alert.save()
-        return warnings
-    
-    
-    # delete and rebuild all the CodeCommitEvents and related alerts 
-    # to make migration easy (and question whether these objects really need to exist)
-    def updateallcommitalerts(self):
-        from codewiki.models import Scraper, CodeCommitEvent
-        from frontend.models import Alerts
-        from django.contrib.auth.models import User
-        
-        # remove all alerts and commit events 
-        Alerts.objects.filter(message_type='commit').delete()
-        CodeCommitEvent.objects.all().delete()
-        
-        for rev in self.repo:
-            warnings = self.updatecommitalertsrev(rev)
-            if warnings:
-                print "updateallcommitalerts warnings", warnings
-
     
     def getctxrevisionsummary(self, ctx):
-        data = { "rev":ctx.rev(), "userid":ctx.user(), "description":ctx.description() }
+        description = ctx.description()
+        data = { "rev":ctx.rev(), "userval":ctx.user(), "description":description }
+        data['editingsession'] = description.split('|||')[0]
         epochtime, offset = ctx.date()
         ltime = time.localtime(epochtime)
         data["date"] = datetime.datetime(*ltime[:7])
         data["date_isDST"] = ltime[-1]
         data["files"] = ctx.files()
+
+        luser = User.objects.filter(username=data["userval"])
+        if luser:
+            data["user"] = luser[0]
+        elif re.match("\d+$", data["userval"]):    # older ones are by pk rather than username
+            luser = User.objects.filter(pk=int(data["userval"]))
+            if luser:
+                data["user"] = luser[0]
+        
         return data
-            
-    
+
+
+            # this function is used externally when getting a second version to diff against
     def getreversion(self, rev):
         ctx = self.repo[rev]
         result = self.getctxrevisionsummary(ctx)
@@ -142,58 +92,58 @@ class MercurialInterface:
             result["text"][f] = ftx.data()
         return result
         
-            
-    def getcommitlog(self, scraper):
-        scraperfile = os.path.join(scraper.short_name, "__init__.py")
+	            
+    def getcommitlog(self):
         result = [ ]
-        
         for rev in self.repo:
             ctx = self.repo[rev]
-            if scraperfile in ctx.files():
+            if "code" in ctx.files():   # could get both if changes in description
                 result.append(self.getctxrevisionsummary(ctx))
         return result
-            
-    def getfilestatus(self, scraper):
+        
+    
+    def getfilestatus(self):
         status = { }
-        scraperfile = os.path.join(scraper.short_name, "__init__.py")
-        scraperpath = os.path.join(self.repopath, scraperfile)
+        scraperpath = os.path.join(self.repopath, "code")
         
         lmtime = time.localtime(os.stat(scraperpath).st_mtime)
         status["filemodifieddate"] = datetime.datetime(*lmtime[:7])
         modified, added, removed, deleted, unknown, ignored, clean = self.repo.status()
         
         #print "sssss", (modified, added, removed, deleted, unknown, ignored, clean)
-        status["ismodified"] = (scraperfile in modified)
-        status["isadded"] = (scraperfile in added)
-        
+        status["ismodified"] = ("code" in modified)
+        status["isadded"] = ("code" in added)  # false if actually committed (ie true means we're in an awkward state)
         return status
+        
 
-
-    def getstatus(self, scraper, rev=None):
+    def getstatus(self, rev=None):
         status = { }
-        scraperfile = os.path.join(scraper.short_name, "__init__.py")
-        scraperpath = os.path.join(self.repopath, scraperfile)
-
+        scraperfile = "code"
+        scraperpath = os.path.join(self.repopath, "code")
+        
         # adjacent commit informations
         if rev != None:
-            commitlog = self.getcommitlog(scraper)
+            commitlog = self.getcommitlog()
             if commitlog:
                 irev = len(commitlog)
-                if rev != -1:
+                if rev < 0:
+                    irev = len(commitlog) + (rev+1)
+                else:
                     for lirev in range(len(commitlog)):
                         if commitlog[lirev]["rev"] == rev:
                             irev = lirev
                             break
+
                 if 0 <= irev < len(commitlog):
                     status["currcommit"] = commitlog[irev]
                 if 0 <= irev - 1 < len(commitlog):
                     status["prevcommit"] = commitlog[irev - 1]
                 if 0 <= irev + 1 < len(commitlog):
                     status["nextcommit"] = commitlog[irev + 1]
-                    
+        
         # fetch code from reversion or the file
         if "currcommit" in status:
-            reversion = self.getreversion(rev)
+            reversion = self.getreversion(status["currcommit"]["rev"])
             status["code"] = reversion["text"].get(scraperfile)
         
         # get information about the saved file (which we will if there's no current revision selected -- eg when rev in [-1, None]
@@ -201,16 +151,10 @@ class MercurialInterface:
             fin = codecs.open(scraperpath, mode='rU', encoding='utf-8')
             status["code"] = fin.read()
             fin.close()
-            status.update(self.getfilestatus(scraper))
-
-        if "prevcommit" in status:
-            reversion = self.getreversion(status["prevcommit"]["rev"])
-            prevcode = reversion["text"].get(scraperfile)
-            if prevcode:
-                status["matchlines"] = list(DiffLineSequenceChanges(prevcode, status["code"]))
-    
+            status.update(self.getfilestatus()) # keys: filemodifieddate, isadded, ismodified
+        
+        status['scraperfile'] = scraperfile
         return status
-
 
 
 
@@ -240,7 +184,7 @@ def DiffLineSequenceChanges(oldcode, newcode):
 
     # no difference case
     if matchlinesbackb == -1:
-        return (0, 0, 0, 0)  
+        return None  
     
     # lines have been cleanly deleted, so highlight first character where it happens
     if matchlinesbackb < matchlinesfront:
@@ -266,10 +210,7 @@ def DiffLineSequenceChanges(oldcode, newcode):
     else:
         matchcharsback = 0
     matchcharsbackb = len(b[matchlinesbackb]) - matchcharsback
-    return (matchlinesfront, matchcharsfront, matchlinesbackb, matchcharsbackb)
-      #, matchingcblocksback, (len(a[matchlinesbacka]) -
-      #  matchingcblocksback[-2][2], len(b[matchlinesbackb]) - 
-      #  matchingcblocksback[-2][2]))
+    return { "startline":matchlinesfront, "startoffset":matchcharsfront, "endline":matchlinesbackb, "endoffset":matchcharsbackb }
 
 
 

@@ -7,37 +7,52 @@ PROJECT_NAME = 'ScraperWiki'
 
 # environments
 def dev():
-    "On the scrpaerwiki server, accessible from http://dev.scraperwiki.com"
-    env.hosts = ['212.84.75.28']
-    env.path = '/var/www/dev.scraperwiki.com'
+    "On the scraperwiki server, accessible from http://dev.scraperwiki.com"
+    env.hosts = ['dev.scraperwiki.com']
+    env.path = '/var/www/scraperwiki'
     env.branch = 'default'
     env.web_path = 'file:///home/scraperwiki/scraperwiki'
     env.activate = env.path + '/bin/activate'
     env.user = 'scraperdeploy'
-    env.virtualhost_path = "/"
-    env.deploy_version = "Dev"
-
-def alpha():
-    "On the scrpaerwiki server, accessible from http://alpha.scraperwiki.com"
-    env.hosts = ['212.84.75.28']
-    env.path = '/var/www/alpha.scraperwiki.com'
-    env.branch = 'stable'
-    env.web_path = 'file:///home/scraperwiki/scraperwiki'
-    env.activate = env.path + '/bin/activate'
-    env.user = 'scraperdeploy'
-    env.virtualhost_path = "/"
-    env.deploy_version = "Alpha"
+    env.deploy_version = "dev"
+    env.webserver = True
+    env.email_deploy = False
 
 def www():
     "The main www server (horsell)"
-    env.hosts = ['89.16.177.212:7822']
+    env.hosts = ['horsell.scraperwiki.com:7822']
     env.path = '/var/www/scraperwiki'
     env.branch = 'stable'
     env.web_path = 'file:///home/scraperwiki/scraperwiki'
     env.activate = env.path + '/bin/activate'
     env.user = 'scraperdeploy'
-    env.virtualhost_path = "/"
     env.deploy_version = "www"
+    env.webserver = True
+    env.email_deploy = "deploy@scraperwiki.com"
+
+def umls():
+    "The UML server (rush)"
+    env.hosts = ['rush.scraperwiki.com:7822']
+    env.path = '/var/www/scraperwiki'
+    env.branch = 'stable'
+    env.web_path = 'file:///home/scraperwiki/scraperwiki'
+    env.activate = env.path + '/bin/activate'
+    env.user = 'scraperdeploy'
+    env.deploy_version = "umls"
+    env.webserver = False
+    env.email_deploy = "deploy@scraperwiki.com"
+
+def datastore():
+    "The datastore server (burbage)"
+    env.hosts = ['burbage.scraperwiki.com:7822']
+    env.path = '/var/www/scraperwiki'
+    env.branch = 'stable'
+    env.web_path = 'file:///home/scraperwiki/scraperwiki'
+    env.activate = env.path + '/bin/activate'
+    env.user = 'scraperdeploy'
+    env.deploy_version = "datastore"
+    env.webserver = False
+    env.email_deploy = "deploy@scraperwiki.com"
 
 def setup():
     """
@@ -58,9 +73,8 @@ def virtualenv(command):
     temp = 'cd %s; source ' % env.path
     return run(temp + env.activate + '&&' + command)
 
-
 def buildout():
-    virtualenv('buildout')
+    virtualenv('buildout -N')
 
 def write_changeset():
     try:
@@ -76,7 +90,8 @@ def update_revision():
     virtualenv("hg identify | awk '{print $1}' > web/revision.txt")
 
 def install_cron():
-    virtualenv('crontab crontab')
+    run('crontab %s/cron/crontab.%s' % (env.path, env.deploy_version))
+    sudo('crontab %s/cron/crontab-root.%s' % (env.path, env.deploy_version))
 
 def deploy():
     """
@@ -85,34 +100,40 @@ def deploy():
     then restart the webserver
     """
 
-
     print "***************** DEPLOY *****************"
-    print "Please Enter your deploy message: \r"
-    message = raw_input()
-    env.kforge_user = raw_input('Your kforge Username: ')
-    kforge_pass = pw = getpass.getpass('Your kforge Password: ')
+    if env.email_deploy:
+        print "(Optional, hit return if it's just routine) Enter your deploy comment: \r"
+        message = raw_input()
+
+    env.name = getpass.getuser()
     import time
     env.release = time.strftime('%Y%m%d%H%M%S')
 
-    run("""cd %s; 
-        hg pull https://%s:%s@kforgehosting.com/scraperwiki/hg; 
-        hg update -C %s""" % (env.path,
-                              env.kforge_user,
-                              kforge_pass,
-                              env.branch))
+    old_revision = run("cd %s; hg identify" % env.path)
+
+    run("cd %s; hg pull; hg update -C %s" % (env.path, env.branch))
+
+    new_revision = run("cd %s; hg identify" % env.path)
     
-    migrate()
+    if env.webserver:
+        buildout()
+        migrate()
+        create_tarball()
+        update_revision()
+        restart_webserver()   
+
     write_changeset()
     install_cron()
-    create_tarball()
-    update_revision()
-    restart_webserver()   
-    email(message)
+    if env.email_deploy:
+        email(message, old_revision, new_revision)
 
-def email(message_body=None):
+    print "Deploy successful"
+    print "Old revision = %s" % old_revision
+    print "New revision = %s" % new_revision
+
+def email(message_body=None, old_revision=None, new_revision=None):
     if not message_body:
-        print "Please Enter your deploy message: \r"
-        message_body = raw_input()
+        message_body = "(no deploy comment)"
     
     message = """From: ScraperWiki <mercurial@scraperwiki.com>
 Subject: New Scraperwiki Deployment to %(version)s (deployed by %(user)s)
@@ -121,13 +142,18 @@ Subject: New Scraperwiki Deployment to %(version)s (deployed by %(user)s)
 
 %(message_body)s
 
+Old revision: %(old_revision)s
+New revision: %(new_revision)s
+
 """ % {
         'version' : env.deploy_version,
-        'user' : env.kforge_user,
+        'user' : env.name,
         'changeset' : env.changeset,
         'message_body' : message_body,
+        'old_revision': old_revision,
+        'new_revision': new_revision,
         }
-    sudo("""echo "%s" | sendmail scrapewiki-commits@googlegroups.com """ % message)
+    sudo("""echo "%s" | sendmail deploy@scraperwiki.com """ % message)
     
 def migrate():
     virtualenv('cd web; python manage.py syncdb')
@@ -135,7 +161,13 @@ def migrate():
 
 def restart_webserver():
     "Restart the web server"
-    sudo('apache2ctl restart')
+    sudo('apache2ctl graceful')
 
 def create_tarball():
     virtualenv("mkdir -p ./web/media/src/; hg archive -t tgz ./web/media/src/scraperwiki.tar.gz")
+
+def test():
+    if env.deploy_version != "dev":
+        print "Testing can only be done on the dev machine"
+    else:
+        virtualenv('cd web; python manage.py test')

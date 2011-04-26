@@ -4,6 +4,9 @@ from django.core.management.base import BaseCommand, CommandError
 
 from codewiki.models import Scraper
 
+# this command looks like a botch.  why isn't this data updated when it's run
+# Is this command ever invoked anyway
+
 class Command(BaseCommand):
     option_list = BaseCommand.option_list + (
         make_option('--short_name', '-s', dest='short_name',
@@ -17,16 +20,16 @@ class Command(BaseCommand):
         
         Don't forget to save() it
         """
-        #Do something here
-        pass
+        scraper.update_meta()
+        scraper.save()
     
     def handle(self, **options):
         
         if options['short_name']:
-            scraper = Scraper.objects.get(short_name=options['short_name'], published=True)
+            scraper = Scraper.objects.exclude(privacy_status="deleted").get(short_name=options['short_name'])
             self.update_meta(scraper)
         else:
-            scrapers = Scraper.objects.filter(published=True)
+            scrapers = Scraper.objects.exclude(privacy_status="deleted")
             for scraper in scrapers:
                 self.update_meta(scraper)
             

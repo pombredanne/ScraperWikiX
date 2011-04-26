@@ -1,84 +1,20 @@
-import  sys
-import  resource
-import  string
-import  time
-import  inspect
-import  os
-import  hashlib
-import  ConfigParser
-import  urllib2
+import sys
+import resource
+import string
+import time
+import inspect
+import os
+import hashlib
+import ConfigParser
+import urllib
+import urllib2
+import cStringIO
+import socket
 
-class FireWrapper :
-
-    """
-    Wrapper class to provide a "readline" method on the HTTP response
-    object.
-    """
-
-    def __init__ (self, resp) :
-
-        """
-        Class constructor
-
-        @type   resp    : Python HTTP response object
-        @param  resp    : Python HTTP response object
-        """
-
-        ###
-        ###  HACK ALERT:
-        ###  Python 2.5 seems to think we should not allow small reads. Well,
-        ###  bugger that, we know what we want.
-        ###
-        resp.fp._rbufsize = 1
-
-        self.m_resp    = resp
-        self.m_pending = ''
-
-    def read (self, n = None) :
-
-        """
-        Read data, possibly limited. May thrown an exception if one is
-        passed back from the controller.
-
-        Bug: If the read limit is set and the exception marker text is
-        split, then the exception will be lost.
-
-        @type   n   : Integer
-        @param  n   : Read limit or None for unlimited
-        """
-
-        data    = self.m_resp.read (n)
-        return data
-
-    def readline (self) :
-
-        """
-        Read a line of data, up to the next '\n' character. Returns
-        an empty at the end of the file. May thrown an exception if one is
-        passed back from the controller.
-
-        @rtype      : String
-        @return     : Line of data or empty and end of file
-        """
-
-        ###
-        ###  NOTE:
-        ###  Need to change code to replace "self.m_resp.read (1)" with
-        ###  sensible code that sets the stream to non-blocking mode and
-        ###  uses "select".
-        ###
-        nlo = string.find (self.m_pending, '\n')
-        while nlo < 0 :
-            more = self.m_resp.read (1)
-            if more is None or more == '' :
-                res = self.m_pending
-                self.m_pending = ''
-                return res
-            self.m_pending += more
-            nlo = string.find (self.m_pending, '\n')
-        res = self.m_pending[:nlo + 1]
-        self.m_pending = self.m_pending[nlo + 1:]
-        return res
+try:
+    import simplejson as json
+except:
+    import json
 
 class FireStarter :
 
@@ -100,11 +36,12 @@ class FireStarter :
         self.m_conf.readfp (open(config))
 
 
-        self.m_dispatcher  = None
-        self.m_path        = ''
+        self.m_dispatcher_host  = None
+        self.m_dispatcher_port  = None
         self.m_parameters  = {}
         self.m_environment = {}
         self.m_user        = None
+        self.m_draft       = False
         self.m_group       = None
         self.m_limits      = {}
         self.m_allowed     = []
@@ -113,27 +50,22 @@ class FireStarter :
         self.m_testName    = None
         self.m_runID       = None
         self.m_scraperID   = None
+        self.m_urlquery   = None
         self.m_traceback   = None
         self.m_error       = None
         self.m_cache       = 0
         self.m_language    = None
 
+        # this runID is incredibly ugly, unnecessarily long, and will be prepended with "draft" for draft modes
+        # also gets "fromfrontend" prepended when the running of a script from the webpage
         s = hashlib.sha1()
         s.update(str(os.urandom(16)))
         s.update(str(os.getpid (  )))
         s.update(str(time.time (  )))
         self.m_runID       = '%.6f_%s' % (time.time(), s.hexdigest())
 
-        self.setDispatcher  ('%s:%d' % (self.m_conf.get('dispatcher', 'host'), self.m_conf.getint('dispatcher', 'port')))
+        self.soc_file = None
 
-        import swlogger
-        self.m_swlog = swlogger.SWLogger(config)
-        self.m_swlog.connect ()
-        self.m_swlog.log     (self.m_scraperID, self.m_runID, 'F.START')
-
-    def __del__ (self) :
-
-        self.m_swlog.log     (self.m_scraperID, self.m_runID, 'F.END')
 
     def error (self) :
 
@@ -146,55 +78,27 @@ class FireStarter :
 
         return self.m_error
 
-    def setDispatcher (self, dispatcher) :
+    def setDispatcherHost(self, dispatcher_host) :
 
         """
-        Set the dispatcher address as I{host:port}.
+        Set the dispatcher address.
+
+        @type   dispatcher_host  : String
+        @param  dispatcher_host  : Dispatcher address
+        """
+
+        self.m_dispatcher_host = dispatcher_host
+
+    def setDispatcherPort (self, dispatcher_port) :
+
+        """
+        Set the dispatcher port.
 
         @type   dispatcher  : String
-        @param  dispatcher  : Dispatcher address as I{host:port}
+        @param  dispatcher  : Dispatcher port
         """
 
-        self.m_dispatcher = dispatcher
-
-    def setPath      (self, path) :
-
-        """
-        Set the URL path. This will be decoded by the UML controller to
-        determin what sort of action to run. See the L{command} and
-        L{execute} methods.
-
-        @type   path    : String
-        @param  path    : URL path, used by controller to determin action
-        """
-
-        self.m_path = path
-
-    def setParameter (self, name, value) :
-
-        """
-        Set a parameter to be passed through (as a CGI encoded parameter)
-        to the UML controller.
-
-        @type   name    : String
-        @param  name    : Parameter name
-        @type   value   : String
-        @param  value   : Parameter value
-        """
-
-        self.m_parameters[name] = value
-
-    def setParameters (self, **params) :
-
-        """
-        Set multiple parameters passed as one or more keyed arguments.
-
-        @type   params  : Dictionary
-        @param  params  : Dictionary of name,value pairs
-        """
-
-        for name, value in params.items() :
-            self.setParameter (name, value)
+        self.m_dispatcher_port = dispatcher_port
 
     def setEnvironment (self, name, value) :
 
@@ -221,6 +125,17 @@ class FireStarter :
 
         self.m_scraperID = scraperID
 
+    def setUrlquery (self, urlquery) :
+
+        """
+        Set the urlquery string
+
+        @type   urlquery : String
+        @param  urlquery : Value
+        """
+
+        self.m_urlquery = urlquery
+    
     def setUser (self, user) :
 
         """
@@ -232,6 +147,17 @@ class FireStarter :
 
         self.m_user = user
 
+    def setDraft (self, draft) :
+
+        """
+        Set user that command or script will execute as
+
+        @type   user    : String
+        @param  user    : User name
+        """
+
+        self.m_draft = draft
+    
     def setGroup (self, group) :
 
         """
@@ -334,11 +260,18 @@ class FireStarter :
         """
 
         confurl = self.m_conf.get('dispatcher', 'confurl')
-        try:
-            conftxt = urllib2.urlopen(confurl).read().replace('\r', '')
-        except:
-            print "Failed to open:", confurl
-            conftxt = [ ]
+        if confurl != "allwhite":
+            try:
+                conftxt = urllib2.urlopen(confurl).read().replace('\r', '')
+            except:
+                if confurl[:26] == 'http://dev.scraperwiki.com':
+                    pass  # known problem
+                else:
+                    print json.dumps({ 'message_type':'console', 'content': "Failed to open: %s" % confurl })
+                conftxt = ""
+        else:
+            conftxt = "white=.*"  # hard code the whitelist to avoid accessing it (better for local versions)
+            
         for line in conftxt.split('\n') :
             try :
                 key, value = line.split('=')
@@ -351,6 +284,14 @@ class FireStarter :
             except :
                 pass
 
+        # Ticket 325
+        #
+        if self.m_conf.has_option ('dispatcher', 'path') :
+            self.addPaths (*self.m_conf.get('dispatcher', 'path').split(','))
+
+        self.setDispatcherHost(self.m_conf.get('dispatcher', 'host'))
+        self.setDispatcherPort(self.m_conf.getint('dispatcher', 'port'))
+
     def addPaths (self, *paths) :
 
         """
@@ -359,7 +300,8 @@ class FireStarter :
         """
 
         for path in paths :
-            self.m_paths.append (path)
+            if path:
+                self.m_paths.append (path)
 
     def setASLimit (self, soft, hard = None) :
 
@@ -434,10 +376,17 @@ class FireStarter :
             setter ('x-traceback',  self.m_traceback)
         if self.m_scraperID  is not None :
             setter ('x-scraperid',  self.m_scraperID)
+        if self.m_urlquery   is not None :
+            setter ('x-urlquery',   self.m_urlquery )
         if self.m_testName   is not None :
             setter ('x-testname',   self.m_testName )
+        
         if self.m_runID      is not None :
-            setter ('x-runid',      self.m_runID    )
+            lrunID = self.m_runID
+            if self.m_draft:
+                lrunID = "draft|||%s" % lrunID
+            setter ('x-runid',      lrunID          )
+        
         if self.m_cache      is not None :
             setter ('x-cache',      self.m_cache    )
         if self.m_language   is not None :
@@ -459,45 +408,69 @@ class FireStarter :
         for path in range(len(self.m_paths   )) :
             setter ('x-paths-%d'          % path, self.m_paths   [path])
 
-    def call (self, stream = False) :
+    def _call(self, path, command=None, script=None):
 
         """
         Call the dispatcher to execute the command or script. This is an
         internal method would not normally be called directly.
-
-        @type   stream  : Bool
-        @param  stream  : Return object for streamed data
-        @rtype      : String
-        @return     : Output from command or script
         """
 
-        import urllib
-        import urllib2
+        soc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            soc.connect((self.m_dispatcher_host, self.m_dispatcher_port))
+        except:
+            return self
 
-        self.m_swlog.log         (self.m_scraperID, self.m_runID, 'F.CALL')
+        if command is not None:
+            data = json.dumps({'command': command})
+        elif script is not None:
+            data = json.dumps({'script': script})
+        else:
+            raise Exception("Either command or script parameters must be provided")
 
-        data = urllib.urlencode  (self.m_parameters)
-        req  = urllib2.Request   ('http://%s/%s' % (self.m_dispatcher, self.m_path), data)
+        soc.send('POST %s HTTP/1.1\r\n' % path)
+        soc.send('Content-Length: %s\r\n' % len(data))
+        soc.send('Connection: close\r\n')
 
-        self.setHeaders (req.add_header)
+        def add_header(x, y):
+            soc.send("%s: %s\r\n" % (x, y))
+        self.setHeaders(add_header)
+        soc.send('\r\n')
+        soc.send(data)
 
-        try :
-            resp = urllib2.urlopen   (req)
-        except :
-            self.m_error = str(sys.exc_info()[1])
-            return None
+        self.soc_file = soc.makefile('r')
+        status_line = self.soc_file.readline()
+        if status_line.split(' ')[1] != '200':
+            self.m_error = status_line.split(' ', 2)[2].strip()
+            self.soc_file.close()
+            return self
 
-        #  If streaming mode is requested, then return the response object,
-        #  so the caller can read from it. Otherwise, read the entire result
-        #  and return that.
-        #
-        wrapper = FireWrapper(resp)
-        if stream :
-            return wrapper
+        while True: # Ignore the HTTP headers
+            line = self.soc_file.readline()
+            if line.strip() == "":
+                break
 
-        return wrapper.read()
+        return self
 
-    def command (self, command, stream = False) :
+    def __iter__(self):
+        return self
+
+    def next(self):
+        if self.m_error:
+            message = json.dumps({'message_type' : 'fail', 'content' : self.m_error})
+            self.m_error = None
+            return message
+        elif self.soc_file and not self.soc_file.closed:
+            line = self.soc_file.readline().strip()
+            if line == '':
+                self.soc_file.close()
+                raise StopIteration
+            else:
+                return line
+        else:
+            raise StopIteration
+
+    def command(self, command):
 
         """
         Execute a specified command. The command is passed to the
@@ -505,30 +478,22 @@ class FireStarter :
 
         @type   command : String
         @param  command : Command to execute
-        @type   stream  : Bool
-        @param  stream  : Return object for streamed data
         @rtype      : String
         @return     : Output from command
         """
 
-        self.setPath      ('Command')
-        self.setParameter ('command', command)
-        return self.call  (stream)
+        return self._call('/Command', command=command)
 
-    def execute (self, script, stream = False) :
+    def execute(self, script):
 
         """
         Execute a specified script.
 
         @type   command : String
         @param  command : Text of script to execute
-        @type   stream  : Bool
-        @param  stream  : Return object for streamed data
         @rtype      : String
         @return     : Output from script
         """
 
-        self.setPath      ('Execute')
-        self.setParameter ('script', script)
-        return self.call  (stream)
+        return self._call('/Execute', script=script)
 

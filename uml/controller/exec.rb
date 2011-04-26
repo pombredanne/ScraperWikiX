@@ -1,11 +1,7 @@
 #!/usr/bin/ruby
 
-# moved to the top because syntax errors in the scraperlibs otherwise are difficult to detect
-#
-$stdout = IO.new(1)
-$stderr = IO.new(2)
-
 require 'json'
+require 'iconv'
 
 class ConsoleStream
 
@@ -14,17 +10,37 @@ class ConsoleStream
         @text = ''
     end
 
+    # Do our best to turn anything into unicode, for display on console
+    # (for datastore, we give errors if it isn't already UTF-8)
+    def saveunicode(text)
+        begin
+            text = Iconv.conv('utf-8', 'utf-8', text)
+        rescue Iconv::IllegalSequence
+            begin
+                text = Iconv.conv('utf-8', 'iso-8859-1', text)
+            rescue Iconv::IllegalSequence
+                text = Iconv.conv('utf-8//IGNORE', 'utf-8', text)
+            end
+        end
+        return text
+    end
+
     def write(text)
-        @text = @text + text
+        @text = @text + saveunicode(text)
         if @text.length > 0 && @text[-1] == "\n"[0]
             flush
         end
+    end
+
+    def <<(text)
+       write text
     end
 
     def flush
       if @text != ''
           message = { 'message_type' => 'console', 'content' => @text }
           @fd.write(JSON.generate(message) + "\n")
+          @fd.flush
           @text = ''
       end
     end
@@ -159,13 +175,28 @@ require 'scraperwiki/datastore'
 host, port = datastore.split(':')
 SW_DataStore.create(host, port)
 
-#
-##  Set up a CPU time limit handler which simply throws a python
-##  exception.
-##
-#def sigXCPU (signum, frame) :
-#    raise Exception ("CPUTimeExceeded")
-#
-#signal.signal (signal.SIGXCPU, sigXCPU)
+require 'scraperwiki/stacktrace'
 
-eval File.new(script, 'r').read()
+#  Set up a CPU time limit handler which simply throws a Ruby
+#  exception.
+Signal.trap("XCPU") do
+    raise Exception, "ScraperWiki CPU time exceeded"
+end
+
+ARGV.clear # Clear command line args so that we can use Test::Unit
+
+code = File.new(script, 'r').read()
+begin
+    require 'rubygems'   # for nokigiri to work
+    eval code
+rescue Exception => e
+    est = getExceptionTraceback(e, code)
+    # for debugging:
+    # File.open("/tmp/fairuby", 'a') {|f| f.write(JSON.generate(est)) }
+    $logfd.write(JSON.generate(est) + "\n")
+end
+
+
+# force ConsoleStream to output last line, even if no \n
+$stdout.flush
+$stderr.flush

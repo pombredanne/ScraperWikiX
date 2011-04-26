@@ -1,24 +1,28 @@
 from django.core.cache import cache
-from web.codewiki.models import Scraper
+from web.codewiki.models import Scraper, Code
 from piston.handler import BaseHandler
 from piston.utils import rc
 from piston.emitters import Emitter
 from api.models import api_key
-from api.emitters import CSVEmitter, PHPEmitter, GVizEmitter
-from settings import MAX_API_ITEMS, DEFAULT_API_ITEMS
+from api.emitters import CSVEmitter, PHPEmitter, GVizEmitter, JSONDICTEmitter
+import datetime
 import sys
+import re
 
+Emitter.register('jsondict', JSONDICTEmitter, 'application/json; charset=utf-8')
 Emitter.register('csv', CSVEmitter, 'text/csv; charset=utf-8')
 Emitter.register('php', PHPEmitter, 'text/plain; charset=utf-8')
 Emitter.register('gviz', GVizEmitter, 'text/plain; charset=utf-8')
 
-class InvalidScraperException(Exception): pass
+
+class ScraperAPINotFound(Exception): pass
+class ScraperAPIForbidden(Exception): pass
+class ScraperAPIError(Exception): pass
 
 class APIBase(BaseHandler):
     allowed_methods = ('GET',)
     result = None
     error_response = False
-    cache_duration = 0
     required_arguments = []
 
     def has_errors(self):
@@ -42,74 +46,69 @@ class APIBase(BaseHandler):
         #return result
         return True
 
-    def validate(self, request):
-
+    
+    
+    def validate_argsapikey(self, request):
         #valid API key?
         if not self.is_valid_api_key(request):
-            self.error_response = rc.FORBIDDEN
-            self.error_response.write(": Invalid or inactive API key")
+            error_response = rc.FORBIDDEN   # these rc.ERROR things return a "fresh" instance of the object
+            error_response.write(": Invalid or inactive API key")
+            return error_response
 
         #all required arguments passed?
         for required_argument in self.required_arguments:
             if required_argument not in request.GET:
-                self.error_response = rc.BAD_REQUEST
-                self.error_response.write(": Missing required argument '%s'" % required_argument)
-                break
-
+                error_response = rc.BAD_REQUEST
+                error_response.write(": Missing required argument '%s'" % required_argument)
+                return error_response
+        
+        return None
+    
+    
     def read(self, request):
-
-        #reset previous value, piston will persist instances of this class across calls
-        self.result = None
-        self.error_response = False
-
-        #get the result out of cache if it is there and this call is set to be cached
-        if self.cache_duration > 0:
-            key = request.path_info + request.META['QUERY_STRING']
-            cached_result = cache.get(key)
-
-            if cached_result != None:
-                self.error_response = cached_result['error_response']
-                self.result = cached_result['result']                
-
-        # validate and set the result (unless we have already retrieved the answer from cache)
-        if self.result == None:
-            try:
-                self.validate(request)
-            except InvalidScraperException:
-                self.error_response = rc.NOT_FOUND
-                self.error_response.write(": Scraper not found")
-
-        #if this call is set to cache, save the result
-        if self.cache_duration > 0:
-            result_to_cache = {'error_response': self.error_response, 'result': self.result}
-            cache.set(key, result_to_cache, 30)
-
-        #we have an error, return the error response
-        if self.error_response != False:
-            return None, self.error_response
-        else:
-            return self.result
-
-    def get_scraper(self, request):
+        error_response = self.validate_argsapikey(request)
+        if error_response:
+            return error_response
+        
         try:
-            return Scraper.objects.get(short_name=request.GET.get('name'), published=True)
-        except:
-            raise InvalidScraperException()
+            # this is the function everything funnels through
+            result = self.value(request)
+            
+                    # piston appears not to handle these responses properly.  for now return json objects with messages in them
+        except ScraperAPINotFound, e:
+            return { "error":"Sorry, this scraper is not found." }
+            error_response = rc.NOT_FOUND
+            error_response.write(": Scraper not found")
+            return error_response
+        except ScraperAPIForbidden, e:
+            return { "error":"Sorry, this scraper appears to be private." }
+            error_response = rc.FORBIDDEN
+            error_response.write(": You do not have access to this scraper")
+            return error_response
+        except ScraperAPIError, e:
+            return { "error":"Sorry, there is an error in your request." }
+            error_response = rc.BAD_REQUEST
+            error_response.write(": Error "+e.message)
+            return error_response
+        return result
 
-    def get_limit_and_offset(self, request):
+
+    def getscraperorrccode(self, request, short_name, action):
         try:
-            limit = self.clamp_limit(int(request.GET.get('limit')))
-        except:
-            limit = DEFAULT_API_ITEMS
+            scraper = Code.objects.exclude(privacy_status="deleted").get(short_name=short_name)
+        except Code.DoesNotExist:
+            raise ScraperAPINotFound()
+        if not scraper.actionauthorized(request.user, action):
+            raise ScraperAPIForbidden()
+        return scraper
 
+
+    def convert_date(self, date_str):
+        if not date_str:
+            return None
         try:
-            offset = int(request.GET.get('offset'))
-        except:
-            offset = 0
-
-        return limit, offset
-
-    def clamp_limit(self, limit):
-        if limit == 0 or limit > MAX_API_ITEMS:
-            limit = MAX_API_ITEMS
-        return limit
+            #return datetime.datetime.strptime(date_str, '%Y-%m-%d')
+            return datetime.datetime(*map(int, re.findall("\d+", date_str)))  # should handle 2011-01-05 21:30:37
+        except ValueError:
+            return None
+    

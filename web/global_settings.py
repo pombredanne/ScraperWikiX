@@ -22,7 +22,7 @@ sys.path.append('web')
 
 DEBUG = False
 
-TIME_ZONE = 'London/England'
+TIME_ZONE = 'Europe/London'
 LANGUAGE_CODE = 'en-uk'
 
 SITE_ID = 1
@@ -33,7 +33,8 @@ USE_I18N = True
 
 # Absolute path to the directory that holds media.
 # Example: "/home/media/media.lawrence.com/"
-SCRAPERWIKI_DIR = ""
+HOME_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) # the parent directory of SCRAPERWIKI_DIR
+SCRAPERWIKI_DIR     = HOME_DIR + '/web/'
 MEDIA_DIR = SCRAPERWIKI_DIR + 'media'
 MEDIA_URL = 'http://media.scraperwiki.com/'
 MEDIA_ADMIN_DIR = SCRAPERWIKI_DIR + '/media-admin'
@@ -62,6 +63,8 @@ MIDDLEWARE_CLASSES = [
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django_notify.middleware.NotificationsMiddleware',
+    'piston.middleware.ConditionalMiddlewareCompatProxy',
+    'piston.middleware.CommonMiddlewareCompatProxy',
 ]
 
 AUTHENTICATION_BACKENDS = [
@@ -72,10 +75,7 @@ AUTHENTICATION_BACKENDS = [
 ROOT_URLCONF = 'urls'
 
 TEMPLATE_DIRS = [
-    SCRAPERWIKI_DIR + 'templates',
-    # Put strings here, like "/home/html/django_templates" or "C:/www/django/templates".
-    # Always use forward slashes, even on Windows.
-    # Don't forget to use absolute paths, not relative paths.
+    join(SCRAPERWIKI_DIR, 'templates'),
 ]
 
 TEMPLATE_CONTEXT_PROCESSORS = [
@@ -87,6 +87,21 @@ TEMPLATE_CONTEXT_PROCESSORS = [
   'django_notify.context_processors.notifications',
   'frontend.context_processors.site',
   'frontend.context_processors.template_settings',
+  'frontend.context_processors.site_messages',
+]
+
+SCRAPERWIKI_APPS = [
+    # the following are scraperwiki apps
+    'frontend',
+    'codewiki',
+    'notification',
+    'payment',  	
+    'market',
+    'api',
+    'whitelist',
+    'cropper',
+    'kpi',
+    #'devserver',
 ]
 
 INSTALLED_APPS = [
@@ -99,30 +114,21 @@ INSTALLED_APPS = [
     'django.contrib.markup',
     'registration',
     'south',
-    
     'profiles',
-  	'django.contrib.humanize',
-  	'paypal.standard.ipn',
-  	'django_notify',
-  	'tagging',
-  	'mailer',
-  	'contact_form',
-  	'piston',      # needs 'django-piston' and 'phpserialize'
-    
-    # the following are scraperwiki apps
-    'frontend',
-  	'codewiki',
-  	'notification',
-  	'editor',
-  	'payment',  	
-  	'market',
-  	'api',
-    'whitelist',
-    'devserver',
-]
+    'django.contrib.humanize',
+    'paypal.standard.ipn',
+    'django_notify',
+    'tagging',
+    'contact_form',
+    'piston',      # needs 'django-piston' and 'phpserialize'
+    'captcha',
+] + SCRAPERWIKI_APPS
 
+PISTON_STREAM_OUTPUT = True
 
-ACCOUNT_ACTIVATION_DAYS = 14
+TEST_RUNNER = 'scraperwiki_tests.run_tests' 
+
+ACCOUNT_ACTIVATION_DAYS = 3650 # If you haven't activated in 10 years then tough luck!
 
 # tell Django that the frontent user_profile model is to be attached to the
 # user model in the admin side.
@@ -154,7 +160,6 @@ SCRAPERS_PER_PAGE = 60
 #API
 MAX_API_ITEMS = 500
 DEFAULT_API_ITEMS = 100
-MAX_API_DISTANCE_KM = 10
 
 
 # Requited for the template_settings context processor. Each varible listed
@@ -163,23 +168,44 @@ MAX_API_DISTANCE_KM = 10
 # here
 TEMPLATE_SETTINGS = [
  'API_DOMAIN',
- 'ORBETED_PORT',
- 'ORBETED_DOMAIN',
+ 'ORBITED_PORT',
+ 'ORBITED_DOMAIN',
  'MAX_DATA_POINTS',
  'MAX_MAP_POINTS',
  'REVISION',
+ 'VIEW_DOMAIN',
+ 'CODEMIRROR_URL',
+ 'ENABLE_MARKETPLACE',
 ]
-
-#sparklines and graphs
-SPARKLINE_MAX_DAYS = 30
 
 try:
     REVISION = open(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'revision.txt')).read()[:-1]
 except:
     REVISION = ""
-    
-MAX_MAP_POINTS = 2500
+
 MAX_DATA_POINTS = 500
 
 BLOG_FEED = 'http://blog.scraperwiki.com/feed/'
+
+DATA_TABLE_ROWS = 10
+RSS_ITEMS = 50
+
+VIEW_SCREENSHOT_SIZES = {'small': (110, 73), 'medium': (220, 145), 'large': (800, 600)}
+SCRAPER_SCREENSHOT_SIZES = {'small': (110, 73)}
+
+CODEMIRROR_VERSION = "0.92"
+CODEMIRROR_URL = "CodeMirror-%s/" % CODEMIRROR_VERSION
+
+APPROXLENOUTPUTLIMIT = 3000
+
+HTTPPROXYURL = "http://localhost:9005"
+DISPATCHERURL = "http://localhost:9000"
+
+    # should be in localsettings instead
+UMLURLS = ["http://89.16.177.195:9101", "http://89.16.177.195:9102", "http://89.16.177.195:9103", "http://89.16.177.195:9104"]
+
+ENABLE_MARKETPLACE = False
+
+# tell south to do migrations when doing tests
+SOUTH_TESTS_MIGRATE = True
 

@@ -3,18 +3,18 @@
 
 
 $USAGE       = ' [--cache=N] [--trace=mode] [--script=name] [--path=path] [--scraperid=id] [--runid=id] [-http=proxy] [--https=proxy] [--ftp=proxy] [--ds=server:port]' ;
-$cache       = undef ;
-$trace       = undef ;
-$script      = undef ;
-$path        = undef ;
-$scraperID   = undef ;
-$runID       = undef ;
-$httpProxy   = undef ;
-$httpsProxy  = undef ;
-$ftpProxy    = undef ;
-$datastore   = undef ;
-$uid         = undef ;
-$gid         = undef ;
+$cache       = null ;
+$trace       = null ;
+$script      = null ;
+$path        = null ;
+$scraperID   = null ;
+$runID       = null ;
+$httpProxy   = null ;
+$httpsProxy  = null ;
+$ftpProxy    = null ;
+$datastore   = null ;
+$uid         = null ;
+$gid         = null ;
 
 for ($idx = 1 ; $idx < count($argv) ; $idx += 1)
 {
@@ -103,6 +103,7 @@ foreach (split (':', $path) as $dir)
 
 require_once   'scraperwiki/datastore.php' ;
 require_once   'scraperwiki.php'           ;
+require_once   'scraperwiki/stacktrace.php';
 
 $dsinfo = split (':', $datastore) ;
 SW_DataStoreClass::create ($dsinfo[0], $dsinfo[1]) ;
@@ -110,11 +111,41 @@ SW_DataStoreClass::create ($dsinfo[0], $dsinfo[1]) ;
 if (!is_null ($cache))
    scraperwiki::sw_allowCache ($cache) ;
 
-#
-#def sigXCPU (signum, frame) :
-#    raise Exception ("CPUTimeExceeded")
-#
-#signal.signal (signal.SIGXCPU, sigXCPU)
-#
-require  $script  ;
+// the following might be the only way to intercept syntax errors
+//$errors = array(); 
+//parsekit_compile_file($script, $errors); 
+
+// refer to http://php.net/manual/en/function.set-error-handler.php
+function errorHandler($errno, $errstr, $errfile, $errline)
+{
+    global $script; 
+    $etb = errorParser($errno, $errstr, $errfile, $errline, $script); 
+    scraperwiki::sw_dumpMessage($etb); 
+    return true; 
+}
+set_error_handler("errorHandler", E_ALL & ~E_NOTICE);  // this is for errors, not exceptions (eg 1/0)
+
+/*
+    Can't get this to work - the exception raised inside the signal handler
+    just makes the script fail silently. This isn't the end of the world,
+    as higher level code at least now says it was SIGXCPU that killed it.
+
+    Would be nice to get the stack trace though, like in Ruby/Python!
+
+function sigXCPU($signum) {
+    throw new Exception("ScraperWiki CPU time exceeded");
+}
+pcntl_signal(SIGXCPU, "sigXCPU"); */
+
+try
+{
+    // works also as include or eval.  However no way to trap syntax errors
+    require  $script  ;
+}
+catch(Exception $e)
+{
+    $etb = exceptionHandler($e, $script);
+    //print_r($etb); 
+    scraperwiki::sw_dumpMessage($etb); 
+}
 ?>

@@ -1,10 +1,12 @@
 from django.contrib.syndication.feeds import Feed, FeedDoesNotExist
 from django.core.exceptions import ObjectDoesNotExist
-from codewiki.models import Code
+from codewiki.models import Code, Scraper, View, scraper_search_query
 from tagging.utils import get_tag
 from tagging.models import Tag, TaggedItem
 from django.contrib.comments.models import Comment
 from django.contrib.sites.models import Site
+from django.core.urlresolvers import reverse
+from django.conf import settings
 
 current_site = Site.objects.get_current()
 short_name = ""
@@ -17,11 +19,10 @@ class CommentsForCode(Feed):
         if len(bits) != 1:
             raise ObjectDoesNotExist
         short_name = bits[0]
-        code_object = Code.objects.get(short_name__exact=short_name)
-        if code_object:  
-            self.short_name = code_object.short_name
+        code_object = Code.objects.exclude(privacy_status="deleted").get(short_name__exact=short_name)
+        if code_object:
             return code_object
-        else: 
+        else:
             raise ObjectDoesNotExist
             
     def title(self, obj):
@@ -30,16 +31,17 @@ class CommentsForCode(Feed):
     def link(self, obj):
         if not obj:
             raise FeedDoesNotExist
-        return '/%ss/%s/' % (obj.wiki_type, obj.short_name)
+        return obj.get_absolute_url()
         
-    def item_link(self, item):
-            return '/%ss/%s/comments/#%s' % (item.wiki_type, self.short_name, item.id)
+    def item_link(self, obj):
+        code_object = obj.content_object
+        return "%s#%d" % (reverse('scraper_comments', args=[code_object.wiki_type, code_object.short_name]) , obj.id)
 
     def description(self, obj):
         return "Comments on '%s'" % obj.short_name
 
     def items(self, obj):
-        return Comment.objects.for_model(obj).filter(is_public=True, is_removed=False).order_by('-submit_date')[:15]  
+        return Comment.objects.for_model(obj).filter(is_public=True, is_removed=False).order_by('-submit_date')[:settings.RSS_ITEMS]
       
         
 class LatestCodeObjectsByTag(Feed):
@@ -57,18 +59,18 @@ class LatestCodeObjectsByTag(Feed):
     def link(self, obj):
         if not obj:
             raise FeedDoesNotExist
-        return '/%ss/tags/%s/' % (item.wikik_type, obj.name)
+        return reverse('single_tag', args=[obj.name])
 
-    def item_link(self, item):
-        return '/%ss/show/%s/' % (item.wiki_type, item.short_name)
+    def item_link(self, obj):
+        return obj.get_absolute_url()
 
     def description(self, obj):
-        return "Items recently published on ScraperWiki with tag '%s'" % obj.name
+        return "Items recently created on ScraperWiki with tag '%s'" % obj.name
 
     def items(self, obj):
-       code_objects = Code.objects.filter(published=True)    
-       queryset = TaggedItem.objects.get_by_model(code_objects, obj)
-       return queryset.order_by('-created_at')[:30]
+       scrapers = TaggedItem.objects.get_by_model(Scraper, obj)
+       views = TaggedItem.objects.get_by_model(View, obj)
+       return sorted(list(views) + list(scrapers), key=lambda x: x.created_at, reverse=True)[:settings.RSS_ITEMS]
 
 
 class LatestCodeObjects(Feed):
@@ -76,11 +78,11 @@ class LatestCodeObjects(Feed):
     link = "/browse"
     description = "All the latest scrapers and views added to ScraperWiki"
 
-    def item_link(self, item):
-        return '/%ss/show/%s/' % (item.wiki_type, item.short_name)
+    def item_link(self, obj):
+        return obj.get_absolute_url()
         
     def items(self):
-        return Code.objects.filter(published=True).order_by('-created_at')[:10]
+        return Code.objects.filter(privacy_status="public").order_by('-created_at')[:settings.RSS_ITEMS]
         
         
 class LatestCodeObjectsBySearchTerm(Feed):
@@ -101,18 +103,13 @@ class LatestCodeObjectsBySearchTerm(Feed):
             raise FeedDoesNotExist
         return '/browse/tags/%s/' % obj
 
-    def item_link(self, item):
-        return '/%ss/%s/' % (item.wiki_type, item.short_name)
+    def item_link(self, obj):
+        return obj.get_absolute_url()
 
     def description(self, obj):
-        return "Items published with '%s' somewhere in title or tags" % obj
+        return "Items created with '%s' somewhere in title or tags" % obj
 
     def items(self, obj):
-        code_objects = Code.objects.filter(title__icontains=obj, published=True) 
-        tag = Tag.objects.filter(name__icontains=obj)
-        if tag: 
-          qs = TaggedItem.objects.get_by_model(Code, tag)
-          code_objects = code_objects | qs
-        code_objects = code_objects.filter(published=True).order_by('-created_at')
-        return code_objects[:50]
+        code_objects = scraper_search_query(None, obj) 
+        return code_objects[:settings.RSS_ITEMS]
         

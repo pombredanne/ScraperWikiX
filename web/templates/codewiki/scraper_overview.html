@@ -1,0 +1,239 @@
+{% extends "codewiki/scraper_base.html" %}
+{% load humanize %}
+{% load schedule %}
+{% block tab %}
+{% load markup %}
+{% load screen_shot %}
+
+<fieldset>
+    <input type="hidden" id="hidScheduleOptions" value="{ {% for schedule_option, schedule_text in schedule_options %}'{{schedule_option|safe}}':'{{schedule_text|safe}}', {% endfor %} 'selected': 'PLACEHOLDER' }" />
+    <input type="hidden" id="hidLicenseChoices" value="{ {% for name, text in license_choices %}'{{name}}':'{{text}}', {% endfor %} }" />
+</fieldset>
+
+<div class="content full">
+    <div class="data_viewer">
+
+        {% if sqlitedata %}
+          <div style="float: right">
+            {% if user.is_staff %}
+              <a href="#" id="popupinteractivesqlite" class="staff">Interactive</a> | 
+              <span class="staff">
+                <a class="sqlite_view_schema" >show schema{{sqlitedata.items|pluralize}}</a>
+                <a class="sqlite_view_schema" >hide schema{{sqlitedata.items|pluralize}}</a>
+              </span>
+              |
+            {% endif %}
+            <a href="#" class="csv" id="downloadcsvtable" rel="nofollow">Download spreadsheet (CSV)</a>
+          </div>
+
+          <ul id="sqlite_schema">
+            {% for sqltablename, sqltabledata in sqlitedata.items %}
+              <li>{{sqltabledata.sql}}</li>
+            {% endfor %}
+           </ul>
+    	   <ul class="data_tabs">
+             {% for sqltablename, sqltabledata in sqlitedata.items %}
+                <li id="data_tab_{{forloop.counter}}" class="data_tab"> 
+                    <span class="tablename">{{sqltablename}}</span> ({{sqltabledata.count}}  rows)
+                </li>
+             {% endfor %}
+            </ul>
+          {% for sqltablename, sqltabledata in sqlitedata.items %}
+            <div id="data_content_{{forloop.counter}}" class="data_content">
+            <table class="data">
+              <thead>
+                 <tr>{% for heading in sqltabledata.keys %}<th width="120">{{ heading }}</th>{% endfor %}</tr>
+              </thead>
+              <tbody>
+                 {% for row in sqltabledata.rows %}
+                    <tr class="row">{% for value in row %}<td>{% ifnotequal value None %}{{ value|truncatewords_html:30|urlizetrunc:30 }}{% endifnotequal %}</td>{% endfor %}</tr>
+                 {% endfor %}
+              </tbody>
+            </table>
+            </div>
+          {% endfor %}
+
+          <div class="content_footer">
+             <p>This dataset has a total of {{scraper.scraper.record_count}} records in {{ sqlitedata|length }} table{{ sqlitedata|length|pluralize }}</p>
+          </div>
+        {% endif %}
+
+        {% if not sqlitedata %}
+            <div>
+                <table class="data">
+                    <tbody>
+                    <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+                    <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+                    <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+                    <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+                    <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+                    <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+                    <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+                    <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+                    <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+                    <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+                    <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="info_unpublished">
+                    This scraper is being worked on <br/>and there is no data to display yet
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="content full">
+    <h2>About this scraper 
+        {% if user.is_authenticated %}<a href="#" id="aEditAboutScraper" class="edit">[edit description]</a>{% else %}<a href="{% url login %}?next={% url code_overview 'scraper' scraper.short_name %}" class="edit">[sign in to edit description]</a>{% endif %}
+        {% if user.is_staff %}
+          <span class="staff">
+          {% if ckanresource %}
+            <a href="{{ckanresource.ckan_url}}">Go to CKAN page</a>
+          {% endif %}
+          {% if ckansubmit %}
+            <a href="{{ckansubmit}}">Submit to CKAN</a>
+          {% endif %}
+          </span>
+        {% endif %}
+    </h2>
+    <div class="text_wiki">
+        <div id="divAboutScraper">{{ scraper.description|textile }}</div>
+    </div>
+</div>
+
+{% include 'codewiki/includes/tags.html' %}
+
+<div class="content full">
+    <h2>Views using this data from this scraper</h2>    
+    <ul class="views">
+        {% if related_views %}
+            {% for related_view in related_views %}
+                <li>
+                    <a href="{% url code_overview related_view.wiki_type related_view.short_name %}" class="screenshot">{% screen_shot related_view %}</a>
+                    <a href="{% url code_overview related_view.wiki_type related_view.short_name %}">{{related_view.title}}</a>
+                </li>
+            {% endfor %}
+        {% endif %}        
+        <li class="new"><a href="{% url choose_template 'view' %}" class="editor_view">Create a new view</a></li>
+    </ul>
+    <br class="clear"/>
+</div>
+
+<div class="content col left">
+    <h3>Contributors</h3>
+    {% include 'codewiki/includes/contributors.html' %}
+
+    <h3>License {% if user.is_authenticated %}<a href="#" id="aEditLicense" class="edit">[edit license]</a>{% endif %}</h3>
+    This dataset is licensed as: <span id="spnLicenseChoice">{{scraper.scraper.license}}</span>
+    <p>  </p>
+</div>
+
+
+
+<div class="content col right">
+    <h3>Schedule {% if user.is_authenticated %}<a href="#" id="aEditSchedule" class="edit">[edit schedule]</a>{% endif %}</h3>
+    <p>
+        This scraper 
+        {% if scraper.last_runevent %}
+          {% ifequal scraper.last_runevent.pid -1 %}
+             <a href="{% url scraper_history scraper.wiki_type scraper.short_name %}#run_{{ scraper.last_runevent.id }}">last ran</a>
+              {{scraper.last_runevent.run_started|timesince}} ago for 
+              {{scraper.last_runevent.getdurationseconds}} second{{scraper.last_runevent.getdurationseconds|pluralize}}.
+          {% else %}
+            is <a href="{% url scraper_history scraper.wiki_type scraper.short_name %}#run_{{ scraper.last_runevent.id }}">currently running</a>.
+          {% endifequal %}
+        {% else %}
+           has not been run yet.
+        {% endif %}
+    </p>
+    <p>
+      <span title="Exact time of next run: {{scraper.scraper.next_run}}">
+          It is scheduled to run 
+          <span id="spnRunInterval">
+              {% include 'codewiki/includes/run_interval.html' %}
+          </span>
+      </span>
+    </p>
+
+    {% if user_owns_it %}    
+        {% ifnotequal scraper.scraper.next_run|timeuntil '0 minutes' %}
+            <form action="{% url scraper_schedule_scraper scraper.short_name %}" method="post">
+                <input type="hidden" name="schedule_scraper" value="1" />
+                <input type="submit" id="btnScheduleScraper" class="" value="Schedule next run ASAP" />
+            </form>
+            <br/>
+        {% endifnotequal %}
+    {% endif %}
+
+    {% include 'codewiki/includes/admin_controls.html' %}
+
+</div>
+<br class="clear"/>
+{% endblock %}
+
+{% block run_script_outer %}
+    {{block.super}}
+
+<script>
+{% if user.is_authenticated %}
+    setupButtonConfirmation("btnClearDatastore", "Are you sure? Clicking 'ok' will delete all SCRAPED DATA and METADATA.");
+    setupButtonConfirmation("btnDeleteScraper", "Are you sure? Clicking 'ok' will delete THE ENTIRE SCRAPER and it's data.");
+{% endif %}
+
+
+
+$("#downloadcsvtable").hide(); 
+// detect clicks on data tabs
+$('.data_tab').click(function data_tab_clicked() 
+{
+    // do nothing if already selected
+    if ($(this).hasClass('selected')) 
+        return;
+    
+    // make tab selected
+    $('.data_tab').removeClass('selected'); // all
+    $(this).addClass('selected');
+
+    // show and hide
+    $('.data_content').hide(); // all
+    var tab_content_name = $(this).attr('id').replace('data_tab', 'data_content');
+    var tablename = $(this).find("span.tablename").text(); 
+    $('#' + tab_content_name).show();
+
+    $("#downloadcsvtable").show(); 
+    $("#downloadcsvtable").attr("href", "/api/1.0/datastore/sqlite?format=csv&name={{scraper.short_name}}&query=select+*+from+`"+encodeURI(tablename)+"`"); 
+    //$("#downloadcsvtable").text("/api/1.0/datastore/sqlite?format=csv&name={{scraper.short_name}}&query=select+*+from+"+tablename); 
+}); 
+$('#data_tab_1').click();
+
+
+$('.sqlite_view_schema:last').hide(); 
+$('#sqlite_schema').hide(); 
+$('.sqlite_view_schema').click( function() 
+{
+    $('#sqlite_schema').toggle(); 
+    $('.sqlite_view_schema').toggle(); 
+});
+
+
+$("#popupinteractivesqlite").click(function() 
+{
+    var url = "http://{{settings.VIEW_DOMAIN}}{% url rpcexecute 'quickcheck_datastore' %}?src="+decodeURIComponent('{{scraper.short_name}}'); 
+    $.modal('<iframe width="100%" height="100%" src='+url+'></iframe>', 
+    {
+        overlayClose: true,
+        containerCss: { borderColor:"#0ff", height:"80%", padding:0, width:"90%" }, 
+        overlayCss: { cursor:"auto" }, 
+        onShow: function() 
+        {
+            $('.simplemodal-wrap').css("overflow", "hidden"); 
+            $('.simplemodal-wrap iframe').width($('.simplemodal-wrap').width()-2); 
+            $('.simplemodal-wrap iframe').height($('.simplemodal-wrap').height()-2); 
+        }
+    }); 
+}); 
+
+</script>
+{% endblock %}
+

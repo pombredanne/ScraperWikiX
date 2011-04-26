@@ -1,15 +1,71 @@
 <ul>
-    <li>
-        <a href="{% url profiles_profile_detail scraper.owner.username %}">
-        {% load gravatar %} {% show_gravatar scraper.owner 'medium' %} 
-        {{scraper.owner.get_profile.name}}</a>
-    </li>
-    {% if scraper_contributors %}  
-      {% for contributor in scraper_contributors %}  
-        <li>
-        	{% load gravatar %} {% show_gravatar contributor 'small' %} 
-            <a href="{% url profiles_profile_detail contributor.username %}">{{contributor.get_profile.name}}</a>
-        </li>
-      {% endfor %}
+    {% if not userrolemap.owner %}
+      <li style="color:red">[Error: this scraper has no creator]</li>
     {% endif %}
+
+    {% with 'owner' as role %}
+      {% for contributor in userrolemap.owner %}
+        {% include 'codewiki/includes/contributor.html' %}
+      {% endfor %}
+    {% endwith %}
+
+    {% with 'requester' as role %}
+      {% for contributor in userrolemap.requesters %}
+        {% include 'codewiki/includes/contributor.html' %}
+      {% endfor %}
+    {% endwith %}
+
+    {% with 'editor' as role %}
+      {% for contributor in userrolemap.editor %}  
+        {% include 'codewiki/includes/contributor.html' %}
+      {% endfor %}
+    {% endwith %}
+
+{% if user.is_staff %} <div class="staff"> <!-- staff only, dark launch-->
+    {% if user_owns_it %}
+      {% ifnotequal scraper.privacy_status 'public' %}
+        <li id="addneweditor">
+          <span class="hide">
+            Type in the username of another editor:
+            <input type="text">
+            <input type="button" value="Add" class="addbutton">
+            <input type="button" value="Cancel" class="cancelbutton">
+          </span>
+          <a>[Add new editor]</a>
+        </li>
+      {% endifnotequal %}
+    {% endif %}
+</div> {% endif %} <!-- end staff only, dark launch -->
+
 </ul>
+
+<!-- 
+{% if userrolemap.follow %}
+  <h3>Followers</h3>
+  {% ifnotequal scraper.privacy_status 'public' %}
+    <p id="followernoaccessmessage">(Do not have edit access to this {{scraper.wiki_type}}.)</p>
+  {% endifnotequal %}
+  <ul>
+  {% with 'follow' as role %}
+    {% for contributor in userrolemap.follow %}  
+      {% include 'codewiki/includes/contributor.html' %}
+    {% endfor %}
+  {% endwith %}
+  </ul>
+{% endif %}
+-->
+
+
+<p class="{% ifnotequal scraper.privacy_status 'public' %}xxxreport{% endifnotequal %}">This {{scraper.wiki_type}} <span id="spnPrivacyStatusChoice">{{privacy_status_name}}</span>.
+  <select class="hide" id="optionsPrivacyStatusChoices">  {# this select gets taken apart and rebuilt by jeditable #}
+  {% for value, name in PRIVACY_STATUSES %} 
+    <option value="{{value}}">{{name}}</option>
+  {% endfor %}
+  </select>
+{% if user.is_staff %} <div class="staff"> <!-- staff only, dark launch-->
+  {% if user_owns_it %}
+    <a id="aPrivacyStatusChoice" class="edit">[edit status]</a>
+  {% endif %}
+</div> {% endif %} <!-- end staff only, dark launch -->
+</p>
+

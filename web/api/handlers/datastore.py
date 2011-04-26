@@ -2,94 +2,70 @@ from api.handlers.api_base import APIBase
 from web.codewiki.models import Scraper
 import datetime
 from piston.utils import rc
+from settings import MAX_API_ITEMS, DEFAULT_API_ITEMS
+from codewiki.managers.datastore import DataStore
 
-class Keys(APIBase):
-    required_arguments = ['name']
 
-    def validate(self, request):
-        super(Keys, self).validate(request)
-
-        if self.has_errors() == False:        
-            scraper = self.get_scraper(request)
-            self.result = Scraper.objects.datastore_keys(scraper_id=scraper.guid)
-
-class Search(APIBase):
-    required_arguments = ['name', 'filter']
-
-    def validate(self, request):
-        super(Search, self).validate(request)
-
-        if self.has_errors() == False:        
-
-            key_values = []
-            kv_string = request.GET.get('filter', None)
-            kv_split = kv_string.split('|') 
-            for item in kv_split:
-                item_split = item.split(',', 1)
-                if len(item_split) == 2:
-                    key_values.append((item_split[0], item_split[1]))
-
-            if len(key_values) == 0:
-                self.error_response = rc.BAD_REQUEST
-                return
-            
-            limit, offset = self.get_limit_and_offset(request)
-            scraper = self.get_scraper(request)
-            self.result = Scraper.objects.data_search(scraper_id=scraper.guid, key_values=key_values, limit=limit, offset=offset)
+def requestvalues(request):
+    try:
+        limit = int(request.GET.get('limit', ""))
+    except ValueError:
+        limit = DEFAULT_API_ITEMS
     
+    if limit < 1:
+        limit = DEFAULT_API_ITEMS
+    if limit > MAX_API_ITEMS:
+        limit = MAX_API_ITEMS
+        
+    try:
+        offset = int(request.GET.get('offset', ""))
+    except ValueError:
+        offset = 0
+    
+    if offset < 0:
+        offset = 0
 
+    tablename = request.GET.get('tablename', "")
+    
+    return limit, offset, tablename
+
+
+def data_dictlist(scraper_id, short_name, tablename="", limit=1000, offset=0, start_date=None, end_date=None, latlng=None):
+    dataproxy = DataStore(scraper_id, short_name)  
+    rc, arg = dataproxy.data_dictlist(tablename, limit, offset, start_date, end_date, latlng)
+    if rc:
+        return arg
+    
+    # quick helper result for api when it searches on the default table (which is selected deep in the dataproxy after it has checked out the original mysql key-value datastore thing)
+    if arg == "sqlite3.Error: no such table: main.swdata":
+        sqlitedata = dataproxy.request(("sqlitecommand", "datasummary", 0, None))
+        if sqlitedata and type(sqlitedata) not in [str, unicode]:
+            return [{"error":arg}, {'datasummary':sqlitedata}]
+    raise Exception(arg)
+
+
+# accessible only through api/datastore/getolddata
 class Data(APIBase):
     required_arguments = ['name']
-    
-    def validate(self, request):
-        super(Data, self).validate(request)
+    def value(self, request):
+        scraper = self.getscraperorrccode(request, request.GET.get('name'), "apidataread")
+        limit, offset, tablename = requestvalues(request)
+        return data_dictlist(scraper_id=scraper.guid, short_name=scraper.short_name, tablename=tablename, limit=limit, offset=offset)
 
-        if self.has_errors() == False:        
-            limit, offset = self.get_limit_and_offset(request)
-            scraper = self.get_scraper(request)
-            self.result = Scraper.objects.data_dictlist(scraper_id=scraper.guid, limit=limit, offset=offset)
 
+class Keys(APIBase):
+    def value(self, request):
+        return { "error":"Sorry, this function has been deprecated.", "message":"use scraperwiki.datastore.sqlite with format=jsonlist and limit 0" }
+
+class Search(APIBase):
+    def value(self, request):
+        return { "error":"Sorry, this function has been deprecated.", "message":"no search is possible across different databases" }
 
 class DataByLocation(APIBase):
-    required_arguments = ['name', 'lat', 'lng']
-
-    def validate(self, request):
-        super(DataByLocation, self).validate(request)
-
-        if self.has_errors() == False:        
-            limit, offset = self.get_limit_and_offset(request)
-            try:
-                latlng = (float(request.GET.get('lat', None)), float(request.GET.get('lng', None)))            
-            except:
-                self.error_response = rc.BAD_REQUEST
-                self.error_response.write(": Invalid lat/lng format")                
-                return
-
-            scraper = self.get_scraper(request)
-
-            self.result = Scraper.objects.data_dictlist(scraper_id=scraper.guid, limit=limit, offset=offset, latlng=latlng)
+    def value(self, request):
+        return { "error":"Sorry, this function has been deprecated.", "message":"use scraperwiki.datastore.sqlite bounds on the lat lng values" }
 
 class DataByDate(APIBase):
-    required_arguments = ['name', 'start_date', 'end_date']
+    def value(self, request):
+        return { "error":"Sorry, this function has been deprecated.", "message":"use scraperwiki.datastore.sqlite with bounds on your date field" }
 
-    def validate(self, request):
-        super(DataByDate, self).validate(request)
-
-        if self.has_errors() == False:        
-            limit, offset = self.get_limit_and_offset(request)
-            start_date = self.convert_date(request.GET.get('start_date', None))
-            end_date = self.convert_date(request.GET.get('end_date', None))
-
-            if not start_date and not end_date:
-                self.error_response = rc.BAD_REQUEST
-                self.error_response.write(": Invalid date format")                
-                return
-                
-            scraper = self.get_scraper(request)                
-            self.result = Scraper.objects.data_dictlist(scraper_id=scraper.guid, limit=limit, offset=offset, start_date=start_date, end_date=end_date)
-
-    def convert_date(self, date_str):
-        try:
-            return datetime.datetime.strptime(date_str, '%Y-%m-%d')
-        except ValueError:
-            return None

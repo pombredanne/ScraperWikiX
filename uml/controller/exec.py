@@ -2,12 +2,6 @@
 
 import  sys
 import  os
-
-# moved to the top because syntax errors in the scraperlibs otherwise are difficult to detect
-#
-sys.stdout = os.fdopen(1, 'w', 0)
-sys.stderr = os.fdopen(2, 'w', 0)
-
 import  socket
 import  signal
 import  string
@@ -20,82 +14,14 @@ try    : import json
 except : import simplejson as json
 
 
-def saveunicode(text):
-    try:
-        return unicode(text)
-    except UnicodeDecodeError:
-        pass
-    
-    try:
-        return unicode(text, encoding='utf8')
-    except UnicodeDecodeError:
-        pass
-
-    try:
-        return unicode(text, encoding='latin1')
-    except UnicodeDecodeError:
-        pass
-    
-    return unicode(text, errors='replace')
-
-
-class ConsoleStream :
-
-    """
-    This class is duck-type equivalent to a file object. Used to replace
-    sys.stdout and sys.stderr, to json-ify each chunk of output directly to
-    the logging stream.
-    """
-
-    def __init__ (self, fd) :
-
-        """
-        Constructor. The file descriptor is saved and a local buffer
-        initialised to an empty string.
-        """
-
-        self.m_fd   = fd
-        self.m_text = ''
-
-    def write (self, text) :
-
-        """
-        Write the specified text. This is appened to the local buffer,
-        which is then flushed if it contains a newline.
-        """
-
-        self.m_text += text
-        if len(self.m_text) > 0 and self.m_text[-1] == '\n' :
-            self.flush ()
-
-    def flush (self) :
-
-        """
-        Flush buffered text independent of the presence of newlines.
-        """
-
-        if self.m_text != '' :
-            msg  = { 'message_type' : 'console', 'content' : saveunicode(self.m_text) }
-            self.m_fd.write (json.dumps(msg) + '\n')
-            self.m_fd.flush ()
-            self.m_text = ''
-
-    def close (self) :
-
-        self.m_fd.close ()
-
-    def fileno (self) :
-
-        return self.m_fd.fileno ()
-
-
-USAGE       = ' [--cache=N] [--trace=mode] [--script=name] [--path=path] [--scraperid=id] [--runid=id] [-http=proxy] [--https=proxy] [--ftp=proxy] [--ds=server:port]'
+USAGE       = ' [--cache=N] [--trace=mode] [--script=name] [--path=path] [--scraperid=id] [--runid=id] [--urlquery=str] [-http=proxy] [--https=proxy] [--ftp=proxy] [--ds=server:port]'
 cache       = None
 trace       = None
 script      = None
 path        = None
 scraperID   = None
 runID       = None
+urlquery    = None
 httpProxy   = None
 httpsProxy  = None
 ftpProxy    = None
@@ -125,6 +51,10 @@ for arg in sys.argv[1:] :
         runID      = arg[ 8:]
         continue
 
+    if arg[: 11] == '--urlquery='       :
+        urlquery   = arg[ 11:]
+        continue
+    
     if arg[: 7] == '--path='        :
         path       = arg[ 7:]
         continue
@@ -171,12 +101,12 @@ if path is not None :
 import  scraperwiki.utils
 import  scraperwiki.datastore
 import  scraperwiki.console
+import  scraperwiki.stacktrace
 
-logfd   = os.fdopen(3, 'w', 0)
-scraperwiki.console.setConsole  (logfd)
+scraperwiki.console.logfd   = os.fdopen(3, 'w', 0)
 
-sys.stdout  = ConsoleStream (logfd) ;
-sys.stderr  = sys.stderr
+sys.stdout  = scraperwiki.console.ConsoleStream (scraperwiki.console.logfd)
+sys.stderr  = scraperwiki.console.ConsoleStream (scraperwiki.console.logfd)
 
 config = ConfigParser.ConfigParser()
 config.add_section ('dataproxy')
@@ -191,12 +121,14 @@ config.set         ('dataproxy', 'port', string.split(datastore, ':')[1])
 # uncomment the following line and the ProxyHandler lines if you want proxying to work 
 # in a local version
 
+        # This is not used in the real deployed version as it uses another lower level method within the UMLs
+        # ... although it does not appear to have been built for ftp (so you might not get ftp for PHP version)
 ##os.environ['http_proxy' ] = httpProxy
 ##os.environ['https_proxy'] = httpsProxy
 os.environ['ftp_proxy'  ] = ftpProxy
 scraperwiki.utils.urllibSetup   ()
 
-#  This is for urllib2.urlopen() (and hance scraperwiki.scrape()) where
+#  This is for urllib2.urlopen() (and hence scraperwiki.scrape()) where
 #  we can set explicit handlers.
 #
 scraperwiki.utils.urllib2Setup \
@@ -217,78 +149,32 @@ scraperwiki.datastore.DataStore (config)
 
 
 
-
 #  Set up a CPU time limit handler which simply throws a python
 #  exception.
 #
+# (technical question: what happens if the user script traps this exception and ignores it? --JGT)
+# (answer: it will be brutally killed when the hard CPU time limit is reached.
+# See "man setrlimit", "If the process continues to consume CPU time, it will
+# be sent  SIGXCPU once per second until the hard limit is reached, at which
+# time it is sent SIGKILL". This is one second later, as the runner does
+# "fs.setCPULimit      (cpulimit, cpulimit+1)". --FAI)
 def sigXCPU (signum, frame) :
-    raise Exception ("CPUTimeExceeded")
-
+    raise Exception ("ScraperWiki CPU time exceeded")
 signal.signal (signal.SIGXCPU, sigXCPU)
 
 
+code = open(script).read()
+try :
+    import imp
+    mod        = imp.new_module ('scraper')
+    exec code.rstrip() + "\n" in mod.__dict__
+
+except Exception, e :
+    etb = scraperwiki.stacktrace.getExceptionTraceback(code)  
+    assert etb.get('message_type') == 'exception'
+    scraperwiki.console.dumpMessage(etb)
 
 
-# code hacked here by Julian for clearer stack dump
-import inspect
-import traceback
-import re
-import urllib
-def getJTraceback(code):
-    """Traceback that makes raw data available to javascript to process"""
-    exc_type, exc_value, exc_traceback = sys.exc_info()   # last exception that was thrown
-    codelines = code.splitlines()
-    stackdump = [ ]
-        # outer level is the controller, 
-        # second level is the module call.
-        # anything beyond is within a function.  
-            # Move the function call description up one level to the correct place
-    for frame, file, linenumber, func, lines, index in inspect.getinnerframes(exc_traceback, context=1)[1:]:  # skip outer frame
-        stackentry = {"linenumber":linenumber, "file":file}
-        if func != "<module>":
-            args, varargs, varkw, locals = inspect.getargvalues(frame)
-            funcargs = inspect.formatargvalues(args, varargs, varkw, locals, formatvalue=lambda value: '=%s' % repr(value))
-            stackentry["furtherlinetext"] = "%s(%s)" % (func, funcargs)  # double brackets to make it stand out
-        
-        if file == "<string>" and 0 <= linenumber - 1 < len(codelines):
-            stackentry["linetext"] = codelines[linenumber - 1]  # have to do this as context=1 doesn't work (it doesn't give me anything in lines)
-        
-        stackdump.append(stackentry)
-        
-        if file[:15] == "/usr/lib/python":
-            break
-        pass # assert file == "<string>"
-        
-    if exc_type in [ SyntaxError, IndentationError ]:
-        stackentry = {"linenumber":exc_value.lineno, "file":exc_value.filename, "offset":exc_value.offset}
-        if stackentry["file"] == "<string>" and 0 <= stackentry["linenumber"] - 1 < len(codelines):
-            stackentry["linetext"] = codelines[stackentry["linenumber"] - 1]  # can't seem to recover the text from the SyntaxError object, though it is in it's repr
-        stackentry["furtherlinetext"] = exc_value.msg
-        stackdump.append(stackentry)
-        
-    result = { "exceptiondescription":repr(exc_value), "stackdump":stackdump }
-    
-    if exc_type == IOError and exc_value.args[1] == 403:
-        mblockaccess = re.match('Scraperwiki blocked access to "(.*?)"', str(exc_value.args[2]))
-        if mblockaccess:
-            result["blockedurl"] = mblockaccess.group(1)
-            result["blockedurlquoted"] = urllib.quote(mblockaccess.group(1))
-    #raise IOError('http error', 403, 'Scraperwiki blocked access to "http://tits.ru/".  Click <a href="/whitelist/?url=http%3A//tits.ru/">here</a> for details.', <httplib.HTTPMessage instance at 0x84c318c>)
-    return result
-
-
-def execute (code) :
-
-    try :
-        import imp
-        mod        = imp.new_module ('scraper')
-        exec code.rstrip() + "\n" in mod.__dict__
-    
-    except Exception, e :
-        jtraceback = getJTraceback(code)  
-        scraperwiki.console.dumpMessage(message_type='exception', jtraceback=jtraceback)
-        
-
-execute (open(script).read())
+# force ConsoleStream to output last line, even if no \n
 sys.stdout.flush()
 sys.stderr.flush()

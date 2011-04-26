@@ -1,4 +1,14 @@
-from django.template.defaultfilters import slugify
+import unicodedata
+import re
+#from django.template.defaultfilters import slugify
+
+# Probably early code that could entirely evapourate with some aggressive refactoring
+# Quick alteration from scavenged slugify function to use underscores instead of dashes
+
+def Nslugify(value):
+    value = unicodedata.normalize('NFKD', value).encode('ascii', 'ignore')
+    value = unicode(re.sub('[^\w\s\-]', '', value).strip().lower())
+    return re.sub('\s+', '_', value)
 
 def SlugifyUniquely(value, model, slugfield="slug", instance=None):
     """
@@ -27,16 +37,16 @@ def SlugifyUniquely(value, model, slugfield="slug", instance=None):
     """
     suffix = 0
     max_length = model._meta.get_field(slugfield).max_length
-    potential = base = slugify(value)[:max_length]
+    potential = base = Nslugify(value)[:max_length]
     while True:
         if suffix:
             prefix = base[:max_length - (len(str(suffix)) + 1)]
-            if prefix[-1] == '-': # remove trailing - so we don't get -- in the slug
+            if prefix[-1] == '_': # remove trailing _
                 prefix = prefix[:-1]
 
-            potential = "-".join([prefix, str(suffix)])
+            potential = "_".join([prefix, str(suffix)])
 
-        matches = model.unfiltered.filter(**{slugfield: potential})
+        matches = model.objects.filter(**{slugfield: potential})
         if matches.count() == 0 or (instance and matches[0].pk == instance.pk):
             return potential
 

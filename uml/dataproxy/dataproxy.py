@@ -20,6 +20,7 @@ import string
 import hashlib
 import datalib
 import ConfigParser
+import datetime
 
 try   : import json
 except: import simplejson as json
@@ -107,8 +108,9 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
         from the scraper running under the controller.
         """
 
-        scraperID = None
-        runID     = None
+        scraperID   = None
+        runID       = None
+        scraperName = None
 
         #  Determin the caller host address and the port to call on that host from
         #  the configuration since the request will be from UML running inside that
@@ -120,28 +122,32 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
         via       = config.get (uml, 'via' )
         rem       = self.connection.getpeername()
         loc       = self.connection.getsockname()
-        ident     = urllib.urlopen ('http://%s:%s/Ident?%s:%s' % (host, via, port, loc[1])).read()
+        ident     = urllib.urlopen ('http://%s:%s/Ident?%s:%s' % (host, via, port, loc[1])).read()   # (lucky this doesn't clash with the function we are in, eh -- JT)
 
+                # would be a great idea to use cgi.parse_qs(query) technology here -- at both ends -- as it is already used in this module elsewhere!
         for line in string.split (ident, '\n') :
             if line == '' :
                 continue
             key, value = string.split (line, '=')
-            if key == 'runid' :
-                runID     = value
+            if key == 'runid'       :
+                runID       = value
                 continue
-            if key == 'scraperid' :
-                scraperID = value
+            if key == 'scraperid'   :
+                scraperID   = value
+                continue
+            if key == 'scrapername' :
+                scraperName = value
                 continue
 
-        return scraperID, runID
+        return scraperID, runID, scraperName
 
-    def postcodeToLatLng (self, scraperID, runID, postcode) :
+    def postcodeToLatLng (self, db, scraperID, runID, postcode) :
 
         if runID is not None :
             try    : statusInfo[runID]['action'] = 'postcodetolatlng'
             except : pass
 
-        rc, arg = datalib.postcodeToLatLng (scraperID, postcode)
+        rc, arg = db.postcodeToLatLng (scraperID, postcode)
         self.connection.send (json.dumps ((rc, arg)) + '\n')
 
         if runID is not None :
@@ -149,40 +155,13 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
             except : pass
 
 
-    def fetch (self, scraperID, runID, unique) :
-
-        if runID is not None :
-            try    : statusInfo[runID]['action'] = 'fetch'
-            except : pass
-
-        rc, arg = datalib.fetch (scraperID, unique)
-        self.connection.send (json.dumps ((rc, arg)) + '\n')
-
-        if runID is not None :
-            try    : statusInfo[runID]['action'] = None
-            except : pass
-
-    def retrieve (self, scraperID, runID, unique) :
-
-        if runID is not None :
-            try    : statusInfo[runID]['action'] = 'retrieve'
-            except : pass
-
-        rc, arg = datalib.retrieve (scraperID, unique)
-        self.connection.send (json.dumps ((rc, arg)) + '\n')
-
-        if runID is not None :
-            try    : statusInfo[runID]['action'] = None
-            except : pass
-
-
-    def save (self, scraperID, runID, unique, data, date, latlng) :
+    def save (self, db, scraperID, runID, unique, data, date, latlng) :
 
         if runID is not None :
             try    : statusInfo[runID]['action'] = 'save'
             except : pass
 
-        rc, arg = datalib.save (scraperID, unique, data, date, latlng)
+        rc, arg = db.save (scraperID, unique, data, date, latlng)
         self.connection.send (json.dumps ((rc, arg)) + '\n')
 
         if runID is not None :
@@ -190,24 +169,103 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
             except : pass
 
 
-    def process (self, scraperID, runID, line) :
+    def data_dictlist (self, db, scraperID, runID, scraperName, tablename, limit, offset, start_date, end_date, latlng) :
+        rc, arg = db.data_dictlist (scraperID, scraperName, tablename, limit, offset, start_date, end_date, latlng)
+        self.connection.send (json.dumps ((rc, arg)) + '\n')
 
-        request = json.loads(line) 
+    def clear_datastore(self, db, scraperID, runID, scraperName):
+        rc, arg = db.clear_datastore(scraperID, scraperName)
+        self.connection.send(json.dumps ((rc, arg)) + '\n')
 
+    def datastore_keys (self, db, scraperID, runID) :
+        rc, arg = db.datastore_keys (scraperID)
+        self.connection.send (json.dumps ((rc, arg)) + '\n')
+
+    def data_search (self, db, scraperID, runID, key_values, limit, offset) :
+        rc, arg = db.data_search  (scraperID, key_values, limit, offset)
+        self.connection.send (json.dumps ((rc, arg)) + '\n')
+
+    def item_count (self, db, scraperID, runID) :
+        rc, arg = db.item_count  (scraperID)
+        self.connection.send (json.dumps ((rc, arg)) + '\n')
+
+    def has_geo (self, db, scraperID, runID) :
+        rc, arg = db.has_geo  (scraperID)
+        self.connection.send (json.dumps ((rc, arg)) + '\n')
+
+    def listolddatastore(self, db, scraperID, runID) :
+        rc, arg = db.listolddatastore  (scraperID)
+        self.connection.send (json.dumps ((rc, arg)) + '\n')
+
+    def has_temporal (self, db, scraperID, runID) :
+        rc, arg = db.has_temporal  (scraperID)
+        self.connection.send (json.dumps ((rc, arg)) + '\n')
+
+    def converttosqlitedatastore(self, db, scraperID, runID, scraperName):
+        rc, arg = db.converttosqlitedatastore(scraperID, runID, scraperName)
+        self.connection.send(json.dumps ((rc, arg)) + '\n')
+    
+    def process (self, db, scraperID, runID, scraperName, request) :
         if request [0] == 'save'  :
-            self.save     (scraperID, runID, request[1], request[2], request[3], request[4])
+            self.save     (db, scraperID, runID, request[1], request[2], request[3], request[4])
             return
 
-        if request[0] == 'fetch' :
-            self.fetch    (scraperID, runID, request[1])
+        if request[0] == 'postcodetolatlng' :
+            self.postcodeToLatLng (db, scraperID, runID, request[1])
             return
 
-        if request[0] == 'retrieve' :
-            self.retrieve (scraperID, runID, request[1])
+        if request[0] == 'data_dictlist' :
+            self.data_dictlist    (db, scraperID, runID, scraperName, request[1], request[2], request[3], request[4], request[5], request[6])
+            return
+
+        if request[0] == 'clear_datastore':
+            self.clear_datastore(db, scraperID, runID, scraperName)
+            return
+
+        if request[0] == 'datastore_keys' :
+            self.datastore_keys  (db, scraperID, runID)
+            return
+
+        if request[0] == 'data_search' :
+            self.data_search  (db, scraperID, runID, request[1], request[2], request[3])
+            return
+
+        if request[0] == 'converttosqlitedatastore' :
+            if len(request) == 1:
+                self.converttosqlitedatastore(db, scraperID, runID, scraperName)
+            else:
+                self.converttosqlitedatastore(db, request[1], runID, request[2])
+            return
+
+        if request[0] == 'item_count' :
+            self.item_count  (db, scraperID, runID)
+            return
+
+        if request[0] == 'has_geo' :
+            self.has_geo  (db, scraperID, runID)
+            return
+
+        if request[0] == 'listolddatastore' :
+            self.listolddatastore  (db, scraperID, runID)
             return
         
-        if request[0] == 'postcodetolatlng' :
-            self.postcodeToLatLng (scraperID, runID, request[1])
+        if request[0] == 'has_temporal' :
+            self.has_temporal  (db, scraperID, runID)
+            return
+
+        # new experimental QD sqlite interface
+        if request[0] == 'sqlitecommand':
+            if runID is not None :
+                statusInfo[runID]['action'] = 'sqlitecommand'
+            result = db.sqlitecommand(scraperID, runID, scraperName, command=request[1], val1=request[2], val2=request[3])
+            self.connection.send(json.dumps(result) + '\n')
+            if runID is not None :
+                statusInfo[runID]['action'] = None
+            return
+
+        if request[0] == 'save_sqlite':
+            result = db.save_sqlite(scraperID, runID, scraperName, unique_keys=request[1], data=request[2], swdatatblname=request[3])
+            self.connection.send(json.dumps(result) + '\n')
             return
         
         self.connection.send (json.dumps ((False, 'Unknown datastore command: %s' % request[0])) + '\n')
@@ -219,7 +277,7 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
         """
 
         (scm, netloc, path, params, query, fragment) = urlparse.urlparse (self.path, 'http')
-
+        
         #  Path /Status returns status information.
         #
         if path == '/Status'  :
@@ -229,23 +287,34 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
 
         try    : params = urlparse.parse_qs(query)
         except : params = cgi     .parse_qs(query)
-        scraperID, runID = self.ident (params['uml'][0], params['port'][0])
+
+                # if the scraperid is set then we can assume it's from the frontend, is not authenticated and will have no write permissions
+                # if it is not set, then it is fetched through the ident call and is then authenticated enough for writing purposes in its relevant file
+        if 'scraperid' in params and params['scraperid'][0] not in [ '', None ] :
+            if self.connection.getpeername()[0] != config.get ('dataproxy', 'secure') :
+                self.connection.send (json.dumps ((False, "ScraperID only accepted from secure hosts")) + '\n')
+                return
+            scraperID, runID, scraperName = params['scraperid'][0], 'fromfrontend.%s.%s' % (params['scraperid'][0], time.time()), params.get('short_name', [""])[0]
+        
+        else :
+            scraperID, runID, scraperName = self.ident (params['uml'][0], params['port'][0])
+
 
         if path == '' or path is None :
             path = '/'
 
         if scm not in [ 'http', 'https' ] or fragment :
-            self.send_error (400, "Malformed URL %s" % self.path)
+            self.connection.send (json.dumps ((False, "Malformed URL %s" % self.path)) + '\n')
             return
 
-        datalib.connection   (config)
         try    :
-            datalib.connection   (config)
-        except :
-            self.connection.send (json.dumps ((False, 'Cannot connect to datastore')) + '\n')
+            db = datalib.Database(self)
+            db.connect(config, scraperID)
+        except Exception, e :
+            self.connection.send (json.dumps ((False, '%s' % e)) + '\n')
             return
 
-        self.connection.send (json.dumps ((True, 'OK')) + '\n')
+        self.connection.send(json.dumps ((True, 'OK')) + '\n')
 
         if runID is not None :
             statusLock.acquire ()
@@ -255,16 +324,27 @@ class ProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
 
         startat = time.strftime ('%Y-%m-%d %H:%M:%S')
 
-        try :
-            buffer  = ''
-            while True :
-                buffer = buffer + self.connection.recv (255)
-                if buffer == '' :
+
+                # enter the loop that now continues through until the connection is closed
+                # unclear where self.connection is generated.  I believe it is a socket object
+                # documentation on object is poor:  http://docs.python.org/release/2.5.2/lib/socket-objects.html
+                # would be nice to obtain its error conditions, timeouts, and an explicit message that it is actually been closed
+                # perhaps should be using sendall instead of send() everywhere
+        sbuffer = [ ]
+        try:
+            while True:
+                srec = self.connection.recv(255)
+                ssrec = srec.split("\n")  # multiple strings if a "\n" exists
+                sbuffer.append(ssrec.pop(0))
+                while ssrec:
+                    line = "".join(sbuffer)
+                    if line:
+                        request = json.loads(line) 
+                        self.process(db, scraperID, runID, scraperName, request)
+                    sbuffer = [ ssrec.pop(0) ]  # next one in
+                if not srec:
                     break
-                lines  = string.split (buffer, '\n')
-                for line in lines[:-1] :
-                    self.process (scraperID, runID, line)
-                buffer = lines[-1]
+                
         finally :
             self.connection.close()
 
@@ -357,7 +437,7 @@ if __name__ == '__main__' :
         if os.fork() == 0 :
             os .setsid()
             sys.stdin  = open ('/dev/null')
-            sys.stdout = open (varDir + '/log/dataproxy', 'w', 0)
+            sys.stdout = open (varDir + '/log/dataproxy', 'a', 0)
             sys.stderr = sys.stdout
             if os.fork() == 0 :
                 ppid = os.getppid()
@@ -391,7 +471,7 @@ if __name__ == '__main__' :
             if child == 0 :
                 break
 
-            sys.stdout.write("Forked subprocess: %d\n" % child)
+            sys.stdout.write("%s: Forked subprocess: %d\n" % (datetime.datetime.now().ctime(), child))
             sys.stdout.flush()
     
             os.wait()

@@ -76,11 +76,12 @@ class BaseController (BaseHTTPServer.BaseHTTPRequestHandler) :
         self.m_cgi_fp       = None
         self.m_cgi_headers  = None
         self.m_cgi_env      = None
-        self.m_fs           = None
         self.m_stdout       = sys.stdout
         self.m_stderr       = sys.stderr
         self.m_scraperID    = None
+        self.m_scraperName  = None
         self.m_runID        = None
+        self.m_urlquery     = None
         self.m_uid          = None
         self.m_gid          = None
         self.m_paths        = []
@@ -98,7 +99,7 @@ class BaseController (BaseHTTPServer.BaseHTTPRequestHandler) :
         @param  args    : Arguments to format string
         """
 
-        BaseHTTPServer.BaseHTTPRequestHandler.log_message (self, format, *args)
+        BaseHTTPServer.BaseHTTPRequestHandler.log_message (self, '%5d: %s' % (os.getpid(), format), *args)
         sys.stderr.flush ()
 
     def storeEnvironment (self, rfile, headers, method, query) :
@@ -127,7 +128,7 @@ class BaseController (BaseHTTPServer.BaseHTTPRequestHandler) :
         if 'content-type'   in self.headers : self.m_cgi_env['CONTENT_TYPE'  ] = self.headers['content-type'  ]
         if 'content-length' in self.headers : self.m_cgi_env['CONTENT_LENGTH'] = self.headers['content-length']
 
-    def getFieldStorage (self) :
+    def getRequestMessage(self) :
 
         """
         Get a CGI field storage object. This is created once on demand from
@@ -136,14 +137,7 @@ class BaseController (BaseHTTPServer.BaseHTTPRequestHandler) :
         @return         : cgi.FieldStorage instance
         """
 
-        if self.m_fs is None :
-            self.m_fs = cgi.FieldStorage \
-                        (       fp      = self.m_cgi_fp,
-                                headers = self.m_cgi_headers,
-                                environ = self.m_cgi_env,
-                                keep_blank_values = True
-                        )
-        return self.m_fs
+        return json.loads(self.m_cgi_fp.read(int(self.m_cgi_headers['content-length'])))
 
     def setUser (self) :
 
@@ -217,6 +211,15 @@ class BaseController (BaseHTTPServer.BaseHTTPRequestHandler) :
 
         if 'x-scraperid'  in self.headers :
             self.m_scraperID = os.environ['SCRAPER_GUID'] = self.headers['x-scraperid']
+    
+    def setScraperName (self) :
+
+        """
+        If the \em x-testname header is present then set that as the scraper Name.
+        """
+
+        if 'x-testname'  in self.headers :
+            self.m_scraperName = os.environ['SCRAPER_NAME'] = self.headers['x-testname']
 
     def setRunID (self) :
 
@@ -227,6 +230,18 @@ class BaseController (BaseHTTPServer.BaseHTTPRequestHandler) :
         if 'x-runid'      in self.headers :
             self.m_runID     = os.environ['RUNID']        = self.headers['x-runid']
 
+    def setUrlquery (self) :
+
+        """
+        If the \em x-urlquery header is present then set that as the urlquery
+        """
+
+        if 'x-urlquery'   in self.headers :
+            self.m_urlquery  = self.headers['x-urlquery']
+            os.environ['URLQUERY'] = self.m_urlquery
+            os.environ['QUERY_STRING'] = self.m_urlquery
+
+    
     def setRLimit (self) :
 
         """
@@ -371,6 +386,8 @@ class BaseController (BaseHTTPServer.BaseHTTPRequestHandler) :
         try     :
             lock.acquire()
             wfile = scrapersByRunID[params['runid'][0]]['wfile']
+        except  :
+            pass
         finally :
             lock.release()
 
@@ -518,13 +535,17 @@ class BaseController (BaseHTTPServer.BaseHTTPRequestHandler) :
     def execScript (self, lsfx, code, pwfd, lwfd) :
 
         """
-        Execute a python script, passed as the text of the script. If the
+        Execute a python/ruby/php script, passed as the text of the script. If the
         script throws an exception then generate a traceback, preceeded
         by a delimiter.
         """
 
         tap      = config.get (socket.gethostname(), 'tap')
-        httpport = config.get ('webproxy',  'port')
+        # webport = config.get ('webproxy',  'port')   # no longer used and useless
+            # httpport, httpsport passed in and only used in debug versions as there is a new lower level method that 
+            # intercepts the ports from within the UML configurations
+        httpport = config.get ('httpproxy',  'port')
+        httpsport = config.get ('httpsproxy',  'port')
         ftpport  = config.get ('ftpproxy',  'port')
         dshost   = config.get ('dataproxy', 'host')
         dsport   = config.get ('dataproxy', 'port')
@@ -532,7 +553,7 @@ class BaseController (BaseHTTPServer.BaseHTTPRequestHandler) :
         args    = \
                 [   'exec.%s' % lsfx,
                     '--http=http://%s:%s'       % (tap,  httpport),
-                    '--https=http://%s:%s'      % (tap,  httpport),
+                    '--https=http://%s:%s'      % (tap,  httpsport),
                     '--ftp=ftp://%s:%s'         % (tap,  ftpport ),
                     '--ds=%s:%s'                % (dshost, dsport),
                     '--path=%s'                 % string.join(self.m_paths, ':'),
@@ -569,8 +590,8 @@ class ScraperController (BaseController) :
 
     def fnCommand (self, path) :
 
-        fs      = self.getFieldStorage ()
-        command = fs['command'].value
+        request = self.getRequestMessage()
+        command = request['command']
 
         #  Apply resource limits, and set group and user.
         #
@@ -580,7 +601,9 @@ class ScraperController (BaseController) :
         self.addPaths       ()
         self.addEnvironment ()
         self.setScraperID   ()
+        self.setScraperName ()
         self.setRunID       ()
+        self.setUrlquery    ()
 
         p = subprocess.Popen \
         (   command,
@@ -591,10 +614,32 @@ class ScraperController (BaseController) :
         )
         p.wait ()
 
+    # XXX this is copied from Python scraperlibs, not sure how to share sas
+    # one is in sandbox one outside.
+    # Do our best to turn anything into unicode, for display on console
+    # (for datastore, we give errors if it isn't already UTF-8)
+    def saveunicode(self, text):
+        try:
+            return unicode(text)
+        except UnicodeDecodeError:
+            pass
+        
+        try:
+            return unicode(text, encoding='utf8')
+        except UnicodeDecodeError:
+            pass
+    
+        try:
+            return unicode(text, encoding='latin1')
+        except UnicodeDecodeError:
+            pass
+        
+        return unicode(text, errors='replace')
+ 
     def fnExecute (self, path) :
 
         """
-        Execute python code passed as a file attached as the \em script
+        Execute python/ruby/php code passed as a file attached as the \em script
         parameter directly. This should be used for control functions
         so no resource limits are applied, and the code is run as the
         current user.
@@ -607,11 +652,14 @@ class ScraperController (BaseController) :
         if not self.checkGroup() : return
 
         self.setScraperID   ()
+        self.setScraperName ()
         self.setRunID       ()
+        self.setUrlquery    ()
 
         idents = []
-        if self.m_scraperID is not None : idents.append ('scraperid=%s' % self.m_scraperID)
-        if self.m_runID     is not None : idents.append ('runid=%s'     % self.m_runID    )
+        if self.m_scraperID   is not None : idents.append ('scraperid=%s'   % self.m_scraperID  )
+        if self.m_runID       is not None : idents.append ('runid=%s'       % self.m_runID      )
+        if self.m_scraperName is not None : idents.append ('scrapername=%s' % self.m_scraperName)
         for name, value in self.headers.items() :
             if name[:17] == 'x-addallowedsite-' :
                 idents.append ('allow=%s' % value)
@@ -620,14 +668,13 @@ class ScraperController (BaseController) :
                 idents.append ('block=%s' % value)
                 continue
 
-        fs = self.getFieldStorage ()
+        request = self.getRequestMessage()
 
         psock = socket.socketpair()
         lpipe = os.pipe()
         pid   = os.fork()
 
         if pid > 0 :
-
             cltime1 = time.time()
             lock.acquire()
             info    = { 'wfile' : self.wfile, 'idents' : idents, 'options' : {} }
@@ -637,10 +684,6 @@ class ScraperController (BaseController) :
 
             try :
 
-                import swlogger
-                swl = swlogger.SWLogger(config)
-                swl.connect ()
-                swl.log     (self.m_scraperID, self.m_runID, 'C.START')
 
                 #  Close the write sides of the pipes, these are only needed in the
                 #  child processes.
@@ -688,41 +731,66 @@ class ScraperController (BaseController) :
                         #  Otherwise should have been from child ...
                         #
                         if fd in fdmap :
+                            mapped = fdmap[fd]
                             #
                             #  Read some text. If none then the child has closed the connection
                             #  so unregister here and decrement count of open child connections.
                             #
-                            try    : line = fdmap[fd][0].recv(8192)
-                            except : line = os.read (fdmap[fd][0], 8192)
-                            if line == '' :
+                            line = None
+                            if line is None :
+                                try    : line = mapped[0].recv(8192)
+                                except : pass
+                            if line is None :
+                                try    : line = os.read (mapped[0], 8192)
+                                except : pass
+                            if line in [ '', None ] :
+                                # 
+                                # In case of echoing console output (for PHP, or for
+                                # Ruby/Python before the ConsoleStream is set up in
+                                # exec.py/rb), send anything left over that didn't end in a \n
+                                # 
+                                if fd == psock[0].fileno() :
+                                    if mapped[1] != '':
+                                        # XXX this repeats the code below, there's probably a
+                                        # better way of structuring it
+                                        msg  = { 'message_type' : 'console', 'content' : self.saveunicode(mapped[1]) + "\n"}
+                                        mapped[1] = ''
+                                        text = json.dumps(msg) + '\n'
+                                        self.wfile.write (text)
+                                        self.wfile.flush ()
+                                #
+                                # Record done with that pipe
+                                #
                                 p.unregister (fd)
+                                del fdmap[fd]
                                 busy -= 1
+                                continue
                             #
                             #  If data received and data does not end in a newline the add to
                             #  any prior data from the connection and loop.
                             #
                             if len(line) > 0 and line[-1] != '\n' :
-                                fdmap[fd][1] = fdmap[fd][1] + line
+                                mapped[1] = mapped[1] + line
                                 continue
                             #
                             #  Prepend prior data to the current data and clear the prior
                             #  data. If still nothing then loop.
                             #
-                            line = fdmap[fd][1] + line
-                            fdmap[fd][1] = ''
-                            if line == '' :
+                            text = mapped[1] + line
+                            mapped[1] = ''
+                            if text == '' :
                                 continue
                             #
                             #  If data is from the print connection then json-format as a console
                             #  message; data from logging connection should be already formatted.
                             #
                             if fd == psock[0].fileno() :
-                                msg  = { 'message_type' : 'console', 'content' : line }
-                                line = json.dumps(msg) + '\n'
+                                msg  = { 'message_type' : 'console', 'content' : self.saveunicode(text) }
+                                text = json.dumps(msg) + '\n'
                             #
                             #  Send data back towards the client.
                             #
-                            self.wfile.write (line)
+                            self.wfile.write (text)
                             self.wfile.flush ()
                             #
                             #  If the data came from the logging connection and was an error the
@@ -730,36 +798,42 @@ class ScraperController (BaseController) :
                             #  so split up.
                             #
                             if fd == lpipe[0] :
-                                for l in string.split(line, '\n') :
+                                for l in string.split(text, '\n') :
                                     if l != '' :
                                         msg = json.loads(l)
                                         if msg['message_type'] == 'exception' :
-                                            swl.log (self.m_scraperID, self.m_runID, 'C.ERROR', arg1 = msg['content'], arg2 = msg['content_long'])
+                                            try    : arg1 = msg['content']
+                                            except : arg1 = '(no content)'
 
                 #  Capture the child user and system times as best we can, since this
                 #  is summed over all children.
                 #
                 ostimes1   = os.times ()
-                os.wait()
+                (waited_pid, waited_status) = os.waitpid(pid, 0)
                 ostimes2   = os.times ()
                 cltime2    = time.time()
-                swl.log (self.m_scraperID, self.m_runID, 'C.END',   arg1 = ostimes2[2] - ostimes1[2], arg2 = ostimes2[3] - ostimes1[3])
     
-                msg = '%d seconds elapsed, used %d CPU seconds' %  \
-                                        (   int(cltime2 - cltime1),
-                                            int(ostimes2[2] - ostimes1[2])
-                                        )
-                self.wfile.write \
-                    (   json.dumps \
-                        (   {   'message_type'  : 'console',
-                                'message_sub_type'  : 'consolestatus',  # should be made into message_type
-                                'content'       : msg,
+                # this creates the status output that is passed out to runner.py.  
+                # The actual completion signal comes when the runner.py process ends
+                msg =       {   'message_type'    : 'executionstatus',
+                                'content'         : 'runcompleted', 
+                                'elapsed_seconds' : int(cltime2 - cltime1), 
+                                'CPU_seconds'     : int(ostimes2[2] - ostimes1[2])
                             }
-                        )   + '\n'
-                    )
+                if os.WIFEXITED(waited_status):
+                    msg['exit_status'] = os.WEXITSTATUS(waited_status)
+                if os.WIFSIGNALED(waited_status):
+                    msg['term_sig'] = os.WTERMSIG(waited_status)
+                    # generate text version (e.g. SIGSEGV rather than 11)
+                    sigmap = dict((k, v) for v, k in signal.__dict__.iteritems() if v.startswith('SIG'))
+                    if msg['term_sig'] in sigmap:
+                        msg['term_sig_text'] = sigmap[msg['term_sig']]
+                self.wfile.write(json.dumps(msg) + '\n')
 
             except Exception, e :
 
+                import traceback
+                sys.stderr.write(traceback.format_exc())
                 self.log_request('Copying results failed: %s' % repr(e))
 
             finally :
@@ -797,7 +871,14 @@ class ScraperController (BaseController) :
         os.close(lpipe[0])
 
         open ('/tmp/ident.%d'   % os.getpid(), 'w').write(string.join(idents, '\n'))
-        open ('/tmp/scraper.%d' % os.getpid(), 'w').write(fs['script'].value)
+        open ('/tmp/scraper.%d' % os.getpid(), 'w').write(request['script'].encode('utf-8'))
+
+        # notes: execScript takes the code as an argument, but doesn't do anything with it.  
+        #  it recreates the above file name from the pid and calls the language script with it
+        #  attempts to move the php block wrapping "<?php\n%s\n?>\n" % code to here from runner.py
+        #  made difficult by inability to restart the controller.
+        #  If it was done closer to this face then we could contemplate using eval() rather than require()
+        #  to invoke the script
 
         os.environ['metadata_host' ] = config.get ('metadata', 'host')
 
@@ -812,32 +893,23 @@ class ScraperController (BaseController) :
         except : language = 'python'
 
         if language == 'python' :
-            self.execScript  ('py',  fs['script'].value, psock[1].fileno(), lpipe[1])
+            self.execScript  ('py',  request['script'], psock[1].fileno(), lpipe[1])
             return
 
         if language == 'php'    :
-            self.execScript  ('php', fs['script'].value, psock[1].fileno(), lpipe[1])
+            self.execScript  ('php', request['script'], psock[1].fileno(), lpipe[1])
             return
 
         if language == 'ruby'   :
-            self.execScript  ('rb',  fs['script'].value, psock[1].fileno(), lpipe[1])
+            self.execScript  ('rb',  request['script'], psock[1].fileno(), lpipe[1])
             return
 
-        self.wfile.write \
-                    (   json.dumps \
-                        (   {   'message_type'  : 'console',
-                                'content'       : 'Language %s not recognised' % language,
-                            }
-                        )   + '\n'
-                    )
-        self.wfile.flush ()
+        self.wfile.write(json.dumps({'message_type': 'console', 'content': 'Language %s not recognised' % language, }) + '\n')
+        self.wfile.flush()
         os.exit()
 
 
-class ControllerHTTPServer \
-        (   SocketServer.ThreadingMixIn,
-            BaseHTTPServer.HTTPServer
-        ) :
+class ControllerHTTPServer(SocketServer.ThreadingMixIn, BaseHTTPServer.HTTPServer):
 
     """
     Wrapper class providing a forking server. Note that we runn forking
@@ -861,6 +933,7 @@ def execute (port) :
     httpd = ControllerHTTPServer(('', port), ScraperController)
     sa    = httpd.socket.getsockname()
     sys.stdout.write ("Serving HTTP on %s port %s\n" % ( sa[0], sa[1] ))
+
     sys.stdout.flush ()
 
     httpd.serve_forever()
@@ -889,6 +962,7 @@ def autoFirewall () :
         m = re_resolv.match (line)
         if m :
             rules.append ('-A OUTPUT -p udp -d %s --dport 53 -j ACCEPT' % m.group(1))
+    rules.append ('-A OUTPUT -p icmp -j ACCEPT')
     rules.append ('-A OUTPUT -j REJECT')
     rules.append ('COMMIT')
 

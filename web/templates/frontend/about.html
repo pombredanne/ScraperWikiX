@@ -5,36 +5,18 @@
     <div class="page_title">
         <h1>All about ScraperWiki</h1>
         <p>
-            All about the technology and people behind ScraperWiki. For technical questions, see <a href="{% url help %}">the FAQ</a>
+            All about the technology and people behind ScraperWiki. 
+          For technical questions, please see <a href="{% url help %}">the help pages</a>.
         </p>
     </div>
 
-<div class="content full">
-    <div id="divWelcome">
-        <div id="divIntroSlideShow">
-            <div class="slide_show">
-                <img src="{{ MEDIA_URL }}images/intro_slides/intro1.png" />
-                <img src="{{ MEDIA_URL }}images/intro_slides/intro2.png" />
-                <img src="{{ MEDIA_URL }}images/intro_slides/intro3.png" />
-                <img src="{{ MEDIA_URL }}images/intro_slides/intro4.png" />  
-                <img src="{{ MEDIA_URL }}images/intro_slides/intro5.png" />                                                
-            </div>
-            <div class="slide_nav"></div>
-        </div>
-        <div id="divWelcomeText">
-            <img id="imgLogoLarge" src="{{MEDIA_URL}}/images/logo_large.png"/>
-            <h1>ScraperWiki is all the tools you need for Screen Scraping, Data Mining &amp; visualisation.</h1>            
-            <h2>Make bad data good, collaborate &amp; discover new datasets.</h2>
-        </div>
-    </div>
-</div>
 <div class="content full">
     <!-- Features -->
     <div class="feature">
         <img src="{{MEDIA_URL}}/images/screenshots/editor.png"/>              
         <h2>Tools for developers ...</h2>            
         <ul>
-            <li>Online code editor, write debug and run Python in your browser <small>(more languages coming soon!)</small></li>
+            <li>Online code editor, write debug and run Python, PHP or Ruby in your browser</li>
             <li>ScraperWiki code libraries make scraping, parsing and geocoding simple</li>
             <li>Store data direct to the datastore</li>
             <li>API access to data in XML, JSON, PHP, YAML or CSV</li>
@@ -79,20 +61,26 @@
 		collaborative. Anyone can write a screen scraper using the online
 		editor, and the code and data are shared with the world. Because it's a wiki, other programmers can
 		contribute to and improve the code. And, if you're not a programmer
-		yourself, you can <a href="{% url market_solicitation %}">request a scraper</a> or ask the
-		ScraperWiki team to <a href="{% url contact_form %}">write one for you</a>.</p>
+		yourself, you can 
+        {% if settings.ENABLE_MARKETPLACE %}
+        <a href="{% url market_solicitation %}">request a scraper</a> or 
+        {% endif %}
+        ask the ScraperWiki team to <a href="{% url contact_form %}">write one for you</a>.</p>
 		
 <h2>People</h2>
 
-				<p>The original idea for ScraperWiki was Julian Todd's. Richard Pope ran the project. Sym Roe, Anna Powell-Smith and Mike Richardson helped to build it (when not <a href="http://www.youtube.com/watch?v=HNGc8gKFkDs">building igloos</a>).</p> 
+				<p>The original idea for ScraperWiki was Julian Todd's. Richard Pope ran the project. Tom Mortimer-Jones, Sym Roe, Anna Powell-Smith and Mike Richardson helped to build it (when not <a href="http://www.youtube.com/watch?v=HNGc8gKFkDs">building igloos</a>).</p> 
 				
 				<p>Aidan McGuire and Aine McGuire managed it all. Thanks to Francis Irving and Tom Steinberg for mentoring, and Francis Davey for legal advice.</p>
 
 				<h2>Code licence</h2>
-				
-				<p>ScraperWiki will shortly be released under the open source Affero GPL licence. Apologies for the delay, but we are currently working on making the code stable enough to be worth releasing.</p>
 
-				<p>Scraperwiki is already 99% open source by weight, using as it does <a href="http://www.python.org/">Python, <a href="http://www.apache.org/">Apache, <a href="http://user-mode-linux.sourceforge.net/">User Mode Linux</a>, <a href="http://twistedmatrix.com/">Twisted</a>, <a href="http://orbited.org/">Orbited</a>, <a href="http://nginx.net/">nginx</a>, and <a href="http://marijn.haverbeke.nl/codemirror/">CodeMirror</a>, among other things.
+				<p>
+				    Yes, the source code for the ScraperWiki site is available under the GNU Affero General Public License. You can 
+                    <a href="https://bitbucket.org/ScraperWiki/scraperwiki">download it here</a>.
+			    </p>
+
+				<p>ScraperWiki is already 99% open source by weight, using as it does <a href="http://www.python.org/">Python, <a href="http://www.apache.org/">Apache, <a href="http://user-mode-linux.sourceforge.net/">User Mode Linux</a>, <a href="http://twistedmatrix.com/">Twisted</a>, <a href="http://orbited.org/">Orbited</a>, <a href="http://nginx.net/">nginx</a>, and <a href="http://codemirror.net/">CodeMirror</a>, among other things.
 		
 				<h2>Funding</h2>
 
@@ -107,4 +95,3 @@
 
 
 {% endblock %}
-{% block run_script %}setupIntroSlideshow();{% endblock %}

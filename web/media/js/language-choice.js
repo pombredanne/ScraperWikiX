@@ -1,28 +1,31 @@
+var scraper_short_name = '';  // reset in templates/codewiki/scraper_base.html
+
 $(function(){
     $('a.editor_view').click(function(){
         newCodeObject('view')
+        return false;
+    });
+
     $('a.editor_scraper').click(function(){
         newCodeObject('scraper')
         return false;
     });
-})
+});
 
-function newCodeObject(wiki_type){
-    var oPopup = $('<div id="popup" class="popup_item">');
-    var oOverlay = $('<div id="overlay"></div></div>');
-
-    oOverlay.show();
-    $('body').append(oOverlay);
-    $('body').append(oPopup);        
-    $('#popup').load('/' + wiki_type + 's/new/choose_template/',
-        function() {
-            var oCloseLink = $('<a href="#">close</a>');            
-            $('#popup').append(oCloseLink);            
-            oCloseLink.click(function(){
-                $('#overlay').remove();
-                $('#popup').remove();        
-                return false;
-            });
-        }
-    );
+function newCodeObject(wiki_type)
+{
+    url = '/' + wiki_type + 's/new/choose_template/?ajax=1';
+    if (scraper_short_name != '')
+        url += '&sourcescraper=' + scraper_short_name; 
+    
+    $.get(url, function(data) 
+    {
+        $.modal('<div id="template_popup">'+data+'</div>', 
+        {
+            overlayClose: true, 
+            autoResize: true, 
+            containerCss:{ borderColor:"#0ff", width:(wiki_type == "scraper" ? 500 : 610)+"px" }, 
+            overlayCss: { cursor:"auto" }
+        });
+    });
 }

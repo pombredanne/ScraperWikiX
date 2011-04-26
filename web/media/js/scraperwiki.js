@@ -1,132 +1,4 @@
-function setupCodeViewer(iLineCount, scraperlanguage) {
-    var oCodeEditor;
-    if(iLineCount < 20)
-        iLineCount = 20;
 
-    var selrangefunc = function() {
-        if (!((selrange[2] == 0) && (selrange[3] == 0))){
-            linehandlestart = oCodeEditor.nthLine(selrange[0] + 1); 
-            linehandleend = oCodeEditor.nthLine(selrange[2] + 1); 
-            oCodeEditor.selectLines(linehandlestart, selrange[1], linehandleend, selrange[3]); 
-        }; 
-    }; 
-
-    $(document).ready(function(){
-        var parsers = Array();
-        parsers['python'] = '../contrib/python/js/parsepython.js';
-        parsers['php'] = ['../contrib/php/js/tokenizephp.js', '../contrib/php/js/parsephp.js'];
-        parsers['ruby'] = ['../../ruby-in-codemirror/js/tokenizeruby.js', '../../ruby-in-codemirror/js/parseruby.js'];
-        parsers['html'] = ['parsexml.js', 'parsecss.js', 'tokenizejavascript.js', 'parsejavascript.js', 'parsehtmlmixed.js']; 
-
-        var stylesheets = Array();
-        stylesheets['python'] = ['/media/CodeMirror/contrib/python/css/pythoncolors.css', '/media/css/codemirrorcolours.css'];
-        stylesheets['php'] = ['/media/CodeMirror/contrib/php/css/phpcolors.css', '/media/css/codemirrorcolours.css']; 
-        stylesheets['ruby'] = ['/media/ruby-in-codemirror/css/rubycolors.css', '/media/css/codemirrorcolours.css'];
-        stylesheets['html'] = ['/media/CodeMirror/css/xmlcolors.css', '/media/CodeMirror/css/jscolors.css', '/media/CodeMirror/css/csscolors.css', '/media/css/codemirrorcolours.css']; 
-
-        oCodeEditor = CodeMirror.fromTextArea("txtScraperCode", {
-            parserfile: parsers[scraperlanguage],
-            stylesheet: stylesheets[scraperlanguage],
-
-            path: "/media/CodeMirror/js/",
-            textWrapping: true, 
-            lineNumbers: true, 
-            indentUnit: 4,
-            readOnly: true,
-            tabMode: "spaces", 
-            autoMatchParens: true,
-            width: '100%',
-            height: iLineCount + 'em', 
-            parserConfig: {'pythonVersion': 2, 'strictErrors': true}, 
-
-            // this is called once the codemirror window has finished initializing itself, (though happens to early, so that the selection gets deselected.  should file a bug)
-            initCallback: function() { setTimeout(selrangefunc, 1000); }
-        });
-    });
-}
-
-function APISetupExploreFunction(){
-
-    //link up the call button to change a few bits of text
-    $('#btnCallMethod').click(
-        function(){
-            $('.explorer_response h2').html('Function response');
-            return true;
-        }
-    );
-
-    //change the sidebar examples to links where useful
-    $('#ulFormats li code').each(
-        function(){
-            var sText = $(this).html();
-            var aLink = $('<a href="#">' + sText + '</a>');
-            aLink.click(
-                function (){
-                    $('#format').val(sText);
-                    $('#format').focus();
-                    rewriteApiUrl();                    
-                }
-            );
-            $(this).html(aLink);
-        }
-    );
-
-    $('#ulScraperShortNames li code').each(
-        function(){
-            var sText = $(this).html();
-            var aLink = $('<a href="#">' + sText + '</a>');
-            aLink.click(
-                function (){
-                    $('#name').val(sText);
-                    $('#name').focus();
-                    rewriteApiUrl();
-                    return false;
-                }
-            );
-            $(this).html(aLink);
-        }
-    );
-
-    $('#ulApiKeys li code').each(
-        function(){
-            var sText = $(this).html();
-            var aLink = $('<a href="#">' + sText + '</a>');
-            aLink.click(
-                function (){
-                    $('#key').val(sText);
-                    $('#key').focus();
-                    rewriteApiUrl();
-                    return false;
-                }
-            );
-            $(this).html(aLink);
-        }
-    );
-
-    //linkup the texboxes to rewrite the API url
-    $('.api_arguments dl input').each(
-        $(this).keyup(
-            function(){
-                rewriteApiUrl();
-            }
-        )
-    );
-}
-
-function rewriteApiUrl (){
-    sArgs = '?';
-    var aControls = $('.api_arguments dl input')
-    for (var i=0; i < aControls.length; i++) {
-        if($(aControls[i]).val() != ''){
-	        if (i > 0) {
-            	sArgs += ('&');
-        	}
-            sArgs += (aControls[i].id + '=' + $(aControls[i]).val());
-        }
-    };
-    $('#aApiLink span').html(sArgs);
-    $('#aApiLink').attr('href', $('#uri').val() + sArgs);
-}
 
 function setupButtonConfirmation(sId, sMessage){
     $('#' + sId).click(
@@ -140,12 +12,27 @@ function setupButtonConfirmation(sId, sMessage){
     );
 }
 
-function setupHints(){
-    $('#q').tbHinter({
-    	text: 'Search ScraperWiki',
-    	class: 'hint'
+function setupSearchBoxHint(){
+    $('#divSidebarSearch input:text').focus(function() {
+        if ($('#divSidebarSearch input:submit').attr('disabled')) {
+            $(this).val('');
+            $(this).removeClass('hint');
+            $('#divSidebarSearch input:submit').removeAttr('disabled'); 
+        }
     });
+    $('#divSidebarSearch input:text').blur(function() {
+        if(!$('#divSidebarSearch input:submit').attr('disabled') && ($(this).val() == '')) {
+            $(this).val('Search');
+            $(this).addClass('hint');
+            $('#divSidebarSearch input:submit').attr('disabled', 'disabled'); 
+        }
+    });
+    $('#divSidebarSearch input:text').blur();
 }
+$(document).ready(function()
+{
+    setupSearchBoxHint(); 
+}); 
 
 function setupScroller(){
     
@@ -235,8 +122,22 @@ function setupCKANLink(){
     });
 }
 
-function setupScraperEditInPlace(wiki_type, short_name){
-    
+function optiontojson(seloptsid, currsel)
+{
+    var result = { };
+    $(seloptsid+" option").each(function(i, el) 
+    {
+        result[$(el).attr("value")] = $(el).text() 
+        if ($(el).text() == currsel)
+            result["selected"] = $(el).attr("value"); 
+    }); 
+    return $.toJSON(result); 
+}
+
+
+// all used only by the code_overview page
+function setupScraperEditInPlace(wiki_type, short_name)
+{
     //about
     $('#divAboutScraper').editable('admin/', {
              indicator : 'Saving...',
@@ -245,9 +146,10 @@ function setupScraperEditInPlace(wiki_type, short_name){
              submit    : 'Save',
              type      : 'textarea',
              loadurl: 'raw_about_markup/',
+             onblur: 'ignore',
              event: 'dblclick',
-             submitdata : {js: 1, short_name: short_name},
-             placeholder: '',             
+             submitdata : {short_name: short_name},
+             placeholder: ''       
          });
 
     $('#aEditAboutScraper').click(
@@ -265,9 +167,10 @@ function setupScraperEditInPlace(wiki_type, short_name){
              tooltip   : 'Click to edit...',
              cancel    : 'Cancel',
              submit    : 'Save',
+             onblur: 'ignore',
              event: 'dblclick',
              placeholder: '',             
-             submitdata : {js: 1, short_name: short_name},
+             submitdata : {short_name: short_name}
          });
          
     $('#aEditTitle').click(
@@ -277,57 +180,156 @@ function setupScraperEditInPlace(wiki_type, short_name){
         }
     );
 
-    //tags
-    oDummy = $('<div id="divEditTags"></div>');
-    $('#divScraperTags').append(oDummy);
-    $('#divEditTags').editable('admin/', {
-             indicator : 'Saving...',
-             tooltip   : 'Click to edit...',
-             cancel    : 'Cancel',
-             submit    : 'Add tags',
-             event: 'dblclick',
-             placeholder: '',
-             submitdata : {js: 1, short_name: short_name},
-             callback: function (data){
-                 //add the new tags onto the list
-                 aItems = data.split(',');
-                 $('#divScraperTags ul').html('');
-                 for (var i=0; i < aItems.length; i++) {
-                    url = '/' + wiki_type + 's/tags/' + escape(aItems[i].trim())
-                    $('#divScraperTags ul').append($('<li><a href="' + url +'">' + aItems[i].trim() + '</a></li>'))
-                 };
-                 //clear out the textbox for next time
-                 $('#divEditTags').html('');
-            },
-         });
-    $('#aAddTags').click (
-         function(){
-              $('#divEditTags').dblclick();
-              return false;
-         }
-     );
+    // this is complex because editable div is not what you see (it's a comma separated field)
+    $('#divEditTags').editable($("#adminsettagurl").val(), 
+    {
+        indicator : 'Saving...', tooltip:'Click to edit...', cancel:'Cancel', submit:'Save tags',
+        onblur: 'ignore', event:'dblclick', placeholder:'',
+        onedit: function() 
+        {
+            var tags = [ ]; 
+            $("#divScraperTags ul.tags li a").each(function(i, el) { tags.push($(el).text()); }); 
+            $(this).text(tags.join(", ")); 
+        },
+        onreset: function() { $('#divEditTagsControls').hide(); },
+        callback: function(lis) 
+        {
+            $('#divScraperTags ul.tags').html(lis); 
+            $('#divEditTagsControls').hide(); 
+            $('#addtagmessage').css("display", ($("#divScraperTags ul.tags li a").length == 0 ? "block" : "none")); 
+        }
+    }); 
+    $('#aEditTags').click(function()
+    {
+        $('#divEditTags').dblclick();
+        $('#divEditTagsControls').show();
+        return false;
+    });
+    $('#divEditTagsControls').hide();
+    $('#addtagmessage').css("display", ($("#divScraperTags ul.tags li a").length == 0 ? "block" : "none")); 
+
+
+    // changing privacy status
+    $('#spnPrivacyStatusChoice').editable($("#adminprivacystatusurl").val(), 
+    {
+        indicator : 'Saving...', tooltip:'Click to edit...', cancel:'Cancel', submit:'Save',
+        onblur: 'ignore', event:'dblclick', placeholder:'', type: 'select', 
+        data: optiontojson('#optionsPrivacyStatusChoices', $('#spnPrivacyStatusChoice').text()), 
+        callback: function() { document.location.reload(true); }
+    }); 
+    $('#aPrivacyStatusChoice').click(function()  {  $('#spnPrivacyStatusChoice').dblclick(); });
+
+    // changing editor status
+    $('#addneweditor a').click(function()
+    {
+        $('#addneweditor a').hide()
+        $('#addneweditor span').show(); 
+    }); 
+    $('#addneweditor input.cancelbutton').click(function()
+    {
+        $('#addneweditor span').hide(); 
+        $('#addneweditor a').show()
+    }); 
+    $('#addneweditor input.addbutton').click(function()
+    {
+        var thisli = $(this).parents("li:first"); 
+        var sdata = { roleuser:$('#addneweditor input:text').val(), newrole:'editor' }; 
+        $.ajax({url:$("#admincontroleditors").val(), type: 'GET', data:sdata, success:function(result)
+        {
+            $('#addneweditor input:text').val(''); 
+            if (result.substring(0, 6) == "Failed")
+                alert(result); 
+            else 
+                document.location.reload(true)
+        }}); 
+        $('#addneweditor span').hide(); 
+        $('#addneweditor a').show(); 
+    }); 
+
+    $('.demotebutton').click(function() 
+    {
+        var sdata = { roleuser:$(this).parents("li:first").find("span").text(), newrole:'follow' }; 
+        $.ajax({url:$("#admincontroleditors").val(), type: 'GET', data:sdata, success:function(result)
+        {
+            if (result.substring(0, 6) == "Failed")
+                alert(result); 
+            else 
+                document.location.reload(true)
+        }}); 
+    }); 
+    $('.promotebutton').click(function() 
+    {
+        var sdata = { roleuser:$(this).parents("li:first").find("span").text(), newrole:'editor' }; 
+        $.ajax({url:$("#admincontroleditors").val(), type: 'GET', data:sdata, success:function(result)
+        {
+            if (result.substring(0, 6) == "Failed")
+                alert(result); 
+            else 
+                document.location.reload(true)
+        }}); 
+    }); 
+
+
 
      //scheduler
-     //alert(schedule_options.length)
      $('#spnRunInterval').editable('admin/', {
               indicator : 'Saving...',
               tooltip   : 'Click to edit...',
               cancel    : 'Cancel',
               submit    : 'Save',
-              data   : $('#hidScheduleOptions').val(),
+              onblur: 'ignore',
+              data   : $('#hidScheduleOptions').val().replace('PLACEHOLDER', $('#spnRunIntervalInner').attr('rawInterval')),
               type   : 'select',
               event: 'dblclick',
               placeholder: '',
-              submitdata : {js: 1, short_name: short_name},
+              submitdata : {short_name: short_name}
           });
-      
-      $('#aEditSchedule').click (
+
+      $('#aEditSchedule').click(
            function(){
-                sCurrent = $('#spnRunInterval').html().trim();               
+                sCurrent = $('#spnRunIntervalInner').html().trim();               
                 $('#spnRunInterval').dblclick();
                 $('#spnRunInterval select').val(sCurrent);
                 return false;
            }
+       );
+
+     //license
+     $('#spnLicenseChoice').editable('admin/', {
+              indicator : 'Saving...',
+              tooltip   : 'Click to edit...',
+              cancel    : 'Cancel',
+              submit    : 'Save',
+              onblur: 'ignore',
+              data   : $('#hidLicenseChoices').val(),
+              type   : 'select',
+              event: 'dblclick',
+              placeholder: '',
+              submitdata : {short_name: short_name}
+          });
+
+      $('#aEditLicense').click (
+           function(){
+                sCurrent = $('#spnLicenseChoice').html().trim();
+                $('#spnLicenseChoice').dblclick();
+                $('#spnLicenseChoice select').val(sCurrent);
+                return false;
+           }
        );          
-    
+      
+
+       $('#publishScraperButton').click(function(){
+           $.ajax({
+               url: 'admin/',
+               data: {'id': 'publishScraperButton'},
+               type: 'POST',
+               success: function(){
+                   $('#publishScraper').fadeOut();
+               },
+               error: function(){
+                   alert("Something went wrong publishing this scraper. Please try again. If the problem continues please send a message via the feedback form.");
+               }
+           });
+           return false;
+       });
 }

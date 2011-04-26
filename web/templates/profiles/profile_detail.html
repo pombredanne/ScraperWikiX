@@ -7,16 +7,21 @@
 {% block content %}
 
     <div class="page_title">
-		<h1>{{ profile.name }}'s profile</h1>
+		<h1>{% if profile.name %}{{profile.name}}{% else %}{{profile.user.username}}{% endif %}'s profile</h1>
 		{% show_gravatar profile.user 'large' %} 
-		<p>{{ profile.bio }}</p>
+		{% if profile.bio %}
+          <p>{{ profile.bio }}</p>
+        {% else %}
+          <p>No bio</p>
+        {% endif %}
 	</div>
 	
 	<div class="content"> 
 		 {% ifequal profile.user.username user.username %}
              <ul>
                <li>Registered email address: {{user.email}}</li>
-	       <li><a href="/profiles/edit/">Edit your profile</a></li>
+               <li><a href="{% url profiles_edit_profile %}">Edit your profile</a></li>
+               <li><a href="{% url auth_password_change %}">Change your password</a></li>
              </ul>
 
 {% comment %} [APS: remove following/watching features for now]
@@ -35,24 +40,34 @@
 
         {% endifequal %}
 	</div>
-		
-	<div class="content">
-    	{%  if owned_scrapers %}
-	        <h2>{{ profile.name }}'s published scrapers</h2>    	
-    	    <ul>	        
-                {% for scraper in owned_scrapers %}
-            	    {% include 'frontend/scraper_line.html' %}
-            	{% endfor %}
-	        </ul> 	            	
-         {% endif %}
-         {%  if solicitations %}
- 	        <h2>{{ profile.name }}'s requests for datasets</h2>    	
-     	    <ul>	        
-                {% for solicitation in solicitations %}
-                    <li><a href="{% url market_view solicitation.id %}">{{solicitation.title}}</a>{% if solicitation.has_bounty %} <span class="bounty"><a href="{% url market_view solicitation.id %}">&pound;{{solicitation.price}} bounty</a></span>{% endif %}</li>
-             	{% endfor %}
- 	        </ul> 	            	
-          {% endif %}
+
+    <div class="content">
+    {% if owned_code_objects %}
+      <h2>Scrapers and views</h2>    	
+      <ul class="scraper_list">
+        {% for code in owned_code_objects %}
+          {% include 'frontend/includes/code_object_line.html' %}
+        {% endfor %}
+      </ul>
+    {% endif %}
+
+    {% if solicitations %}
+      <h2>{{ profile.name }}'s requests for datasets</h2>    	
+        <ul>
+          {% for solicitation in solicitations %}
+             <li><a href="{% url market_view solicitation.id %}">{{solicitation.title}}</a>{% if solicitation.has_bounty %} <span class="bounty"><a href="{% url market_view solicitation.id %}">&pound;{{solicitation.price}} bounty</a></span>{% endif %}</li>
+          {% endfor %}
+        </ul>
+    {% endif %}
     </div>
-    
+
+    {% if user.is_staff %}
+        <div class="staff">
+            <p><b>Admin only</b></p>
+
+            <p><a href="/admin/auth/user/{{profile.user.pk}}/">User's Django admin page</a></p>
+        </div>
+    {% endif %}
+
+ 
     {% endblock %}

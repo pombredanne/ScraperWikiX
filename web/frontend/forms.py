@@ -6,35 +6,80 @@ from registration.forms import RegistrationForm
 from django.utils.translation import ugettext_lazy as _
 from django.contrib.auth.models import User
 from django.contrib.auth.forms import AuthenticationForm
+from django.db.models import Q
+from captcha.fields import CaptchaField
+from codewiki.models import SCHEDULE_OPTIONS, Scraper, Code
 
 
 #from django.forms.extras.widgets import Textarea
 class SearchForm(forms.Form):
     q = forms.CharField(label='Find datasets', max_length=50)
     
-class UserProfileForm (forms.ModelForm):
-    alert_frequency = forms.ChoiceField(required=False, label="How often do you want to be emailed?", choices = (
-                                (-1, 'Never'), 
-                                (3600*24, 'Once a day'),
-                                (3600*24*3, 'Every couple of days'),                                
-                                (3600*24*7, 'Once a week'),
-                                (3600*24*7*2, 'Every two weeks'),))
-
-    options = []
-    for item in AlertTypes.objects.all():
-        options.append((item.pk, item.label))
-
-    alert_types = forms.MultipleChoiceField(options, widget=forms.CheckboxSelectMultiple())
-    bio = forms.CharField(label="A bit about you", widget=forms.Textarea(), required=False)
     
+def get_emailer_for_user(user):
+    try:
+        queryset = Scraper.objects.exclude(privacy_status="deleted")
+        queryset = queryset.filter(Q(usercoderole__role='owner') & Q(usercoderole__user=user))
+        queryset = queryset.filter(Q(usercoderole__role='email') & Q(usercoderole__user=user))
+        return queryset.latest('id')
+    except:
+        return None
+
+    
+class UserProfileForm(forms.ModelForm):
+    def __init__(self, *args, **kwargs):
+        super(UserProfileForm, self).__init__(*args, **kwargs)
+
+        self.user = self.instance.user
+        self.emailer = get_emailer_for_user(self.user)
+
+        if self.emailer:
+            self.fields['alert_frequency'].initial = self.emailer.run_interval
+        else:
+            # Fallback on frequency in profile while not all users have an emailer
+            self.fields['alert_frequency'].initial = self.instance.alert_frequency
+
+        self.fields['email'].initial = self.user.email
+
+    alert_frequency = forms.ChoiceField(required=False, 
+                                        label="How often do you want to be emailed?", 
+                                        choices = SCHEDULE_OPTIONS)
+    bio = forms.CharField(label="A bit about you", widget=forms.Textarea(), required=False)
+    email = forms.EmailField(label="Email Address")
+    
+    def clean_email(self):
+        email = self.cleaned_data['email']
+        if email != self.user.email and User.objects.filter(email__iexact=email).count > 0:
+            raise forms.ValidationError("This email address is already used by another account.")
+
+        return email
+
     class Meta:
         model = UserProfile
-        fields = ('bio', 'name', 'alert_frequency', 'alert_types')
+        fields = ('bio', 'name')
+
+    def save(self, *args, **kwargs):
+        self.user.email = self.cleaned_data['email']
+        self.user.save()
+
+        if self.emailer:
+            self.emailer.run_interval = self.cleaned_data['alert_frequency']
+            self.emailer.save()
+
+        return super(UserProfileForm, self).save(*args,**kwargs)
 
 class scraperContactForm(ContactForm):
-  subject_dropdown = forms.ChoiceField(label="Subject type", choices=(('suggestion', 'Suggestion about how we can improve something'),('request', 'Request a private scraper'),('help', 'Help using ScraperWiki'), ('bug', 'Report a bug'), ('other', 'Other')))
-  title = forms.CharField(widget=forms.TextInput(), label=u'Subject')
-  recipient_list = [settings.FEEDBACK_EMAIL]
+    def __init__(self, data=None, files=None, request=None, *args, **kwargs):
+        super(scraperContactForm, self).__init__(data=data, files=files, request=request, *args, **kwargs)
+        if not request.user.is_authenticated():
+            self.fields['captcha'] = CaptchaField()
+        
+    subject_dropdown = forms.ChoiceField(label="Subject type", choices=(('suggestion', 'Suggestion about how we can improve something'),('request', 'Request a private scraper'),('help', 'Help using ScraperWiki'), ('bug', 'Report a bug'), ('other', 'Other')))
+    title = forms.CharField(widget=forms.TextInput(), label=u'Subject')
+    recipient_list = [settings.FEEDBACK_EMAIL]
+
+    def from_email(self):
+        return self.cleaned_data['email']
 
 
 class SigninForm (AuthenticationForm):
@@ -53,9 +98,6 @@ class CreateAccountForm(RegistrationForm):
     tos = forms.BooleanField(widget=forms.CheckboxInput(),
                            label=_(u'I agree to the ScraperWiki terms and conditions'),
                            error_messages={ 'required': _("You must agree to the ScraperWiki terms and conditions") })
-    data_protection = forms.BooleanField(widget=forms.CheckboxInput(),
-                        label= u'I will not breach anyone\'s copyright or privacy, or breach any laws including the Data Protection Act 1998',
-                        error_messages={ 'required': "You must agree to abide by the Data Protection Act 1998" })
 
     def clean_email(self):
        """
@@ -66,3 +108,6 @@ class CreateAccountForm(RegistrationForm):
        if User.objects.filter(email__iexact=self.cleaned_data['email']):
            raise forms.ValidationError(_("This email address is already in use. Please supply a different email address."))
        return self.cleaned_data['email']
+
+class ResendActivationEmailForm(forms.Form):
+    email_address = forms.EmailField()

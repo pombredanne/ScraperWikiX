@@ -1,664 +1,453 @@
 from django.template import RequestContext
-from django.http import HttpResponseRedirect, HttpResponse, Http404
+from django.template.loader import render_to_string
+from django.http import HttpResponseRedirect, HttpResponse, Http404, HttpResponseNotFound
 from django.shortcuts import render_to_response
-from django.shortcuts import get_object_or_404
-from django.core.exceptions import ObjectDoesNotExist
 from django.core.urlresolvers import reverse
-from tagging.models import Tag, TaggedItem
-from tagging.utils import get_tag
-from django.db import IntegrityError
+from django.core.management import call_command
 from django.contrib.auth.models import User
+from django.views.decorators.http import condition
 import textile
-
 from django.conf import settings
 
+from managers.datastore import DataStore
 from codewiki import models
-from codewiki import forms
-from codewiki.forms import ChooseTemplateForm
-from api.emitters import CSVEmitter 
-import vc
 import frontend
 
-import subprocess
-
-import StringIO, csv, types
+import urllib
+import re
+import urllib2
+import base64
 import datetime
 
 try:                import json
 except ImportError: import simplejson as json
 
+PRIVACY_STATUSES_UI = [ ('public', 'can be edited by anyone who is logged on'),
+                        ('visible', 'can only be edited by those listed as editors'), 
+                        ('private', 'cannot be seen by anyone except for the designated editors'), 
+                        ('deleted', 'is deleted') 
+                      ]
 
-def scraper_overview(request, scraper_short_name):
-    """
-    Shows info on the scraper plus example data.
-    """
-    user = request.user
-    scraper = get_object_or_404(
-        models.Scraper.objects,
-        short_name=scraper_short_name)
-
-    # Only logged in users should be able to see unpublished scrapers
-    if not scraper.published and not user.is_authenticated():
-        return render_to_response('codewiki/access_denied_unpublished.html', context_instance=RequestContext(request))
+def listolddatastore(request):
+    dataproxy = DataStore("junk", "test")
+    rc, arg = dataproxy.request(('listolddatastore',))
+    #scrapers = models.Code.objects.filter(wiki_type="scraper")
+    scrapers = [ ]
+    for lguid in arg[:1000]:
+        if lguid[0]:
+            lscraper = models.Code.objects.filter(guid=lguid[0]).exclude(privacy_status="deleted")
+            if lscraper:
+                scrapers.append((lscraper[0], lguid[0], lguid[1]))
     
-    #get views that use this scraper
-    related_views = scraper.relations.filter(wiki_type='view')
+    res = [ ]
+    for scraper in scrapers:
+        res.append('%d <a href="%s">%s</a>' % (scraper[2], reverse('code_overview', args=[scraper[0].wiki_type, scraper[0].short_name]), scraper[0].short_name))
+    return HttpResponse("%d <p>%s</p>\n<ul><li>%s</li></ul>" % (len(arg), str([(s[1], s[0].short_name)  for s in scrapers]), "</li><li>".join(res)))
+
+
+def getscraperorresponse(request, wiki_type, short_name, rdirect, action):
+    if action in ["delete_scraper", "delete_data"]:
+        if not (request.method == 'POST' and request.POST.get(action, None) == '1'):
+            raise Http404
     
-    #get meta data
-    user_owns_it = (scraper.owner() == user)
-    user_follows_it = (user in scraper.followers())
-    scraper_contributors = scraper.contributors()
-    scraper_tags = Tag.objects.get_for_object(scraper)
+    try:
+        scraper = models.Code.objects.exclude(privacy_status="deleted").get(short_name=short_name)
+    except models.Code.DoesNotExist:
+        message =  "Sorry, this %s does not exist" % wiki_type
+        return HttpResponseNotFound(render_to_string('404.html', {'heading':'Not found', 'body':message}, context_instance=RequestContext(request)))
+    
+    if rdirect and wiki_type != scraper.wiki_type:
+        return HttpResponseRedirect(reverse(rdirect, args=[scraper.wiki_type, short_name]))
+        
+    if not scraper.actionauthorized(request.user, action):
+        return HttpResponseNotFound(render_to_string('404.html', scraper.authorizationfailedmessage(request.user, action), context_instance=RequestContext(request)))
+    return scraper
 
-    num_data_points = scraper.get_metadata('num_data_points')
-    if type(num_data_points) != types.IntType:
-        num_data_points = 50
 
-    column_order = scraper.get_metadata('data_columns')
-    if not user_owns_it:
-        private_columns = scraper.get_metadata('private_columns')
-    else:
-        private_columns = None
-
-    #get data for this scaper
-    data = models.Scraper.objects.data_summary(scraper_id=scraper.guid,
-                                               limit=num_data_points, 
-                                               column_order=column_order,
-                                               private_columns=private_columns)
-
-    # replicates output from data_summary_tables
-    data_tables = {"": data }
-    has_data = len(data['rows']) > 0
-    return render_to_response('codewiki/overview.html', {
-        'scraper_tags': scraper_tags,
-        'selected_tab': 'overview',
-        'scraper': scraper,
-        'user_owns_it': user_owns_it,
-        'user_follows_it': user_follows_it,
-        'has_data': has_data,
-        'data': data,
-        'scraper_contributors': scraper_contributors,
-        'related_views': related_views,
-        }, context_instance=RequestContext(request))
-
-def view_admin (request, short_name):
-    response = None
-
-    user = request.user
-    view = get_object_or_404(
-        models.View.objects, short_name=short_name)
-    user_owns_it = (view.owner() == user)
-
-    form = forms.ViewAdministrationForm(instance=view)
-    #form.fields['tags'].initial = ", ".join([tag.name for tag in view.tags])
-    response = render_to_response('codewiki/view_admin.html', {'selected_tab': 'overview','scraper': view,'user_owns_it': user_owns_it, 'form': form,}, context_instance=RequestContext(request))
-
-    #you can only get here if you are signed in
-    if not user.is_authenticated():
+def getscraperor404(request, short_name, action):
+    try:
+        scraper = models.Code.objects.exclude(privacy_status="deleted").get(short_name=short_name)
+    except models.Code.DoesNotExist:
         raise Http404
+    if not scraper.actionauthorized(request.user, action):
+        raise Http404
+        
+    # extra post conditions to make spoofing these calls a bit of a hassle
+    if action in ["changeadmin", "settags", "set_privacy_status"]:
+        if not (request.method == 'POST' and request.is_ajax()):
+            raise Http404
+    if action == "converttosqlitedatastore":
+        if request.POST.get('converttosqlitedatastore', None) != 'converttosqlitedatastore':
+            raise Http404
+    
+    if action in ["schedule_scraper", "run_scraper", "screenshoot_scraper", ]:
+        if request.POST.get(action, None) != '1':
+            raise Http404
+        
+    return scraper
 
-    if request.method == 'POST':
-        #is this an ajax post of a single value?
-        js = request.POST.get('js', None)
-        #single fields saved via ajax
-        if js:
-            response = HttpResponse()
-            response_text = ''
-            element_id = request.POST.get('id', None)       
-            if element_id == 'divAboutScraper':
-                view.description = request.POST.get('value', None)                                                  
-                response_text = textile.textile(view.description)
 
-            if element_id == 'hCodeTitle':
-                view.title = request.POST.get('value', None)                                                  
-                response_text = view.title
+def comments(request, wiki_type, short_name):
+    scraper = getscraperorresponse(request, wiki_type, short_name, "scraper_comments", "comments")
+    if isinstance(scraper, HttpResponse):  return scraper
+    context = {'selected_tab':'comments', 'scraper':scraper }
+    return render_to_response('codewiki/comments.html', context, context_instance=RequestContext(request))
 
-            if element_id == 'divEditTags':
-                view.tags = ", ".join([tag.name for tag in view.tags]) + ',' + request.POST.get('value', '')                                                  
-                response_text = ", ".join([tag.name for tag in view.tags])
+def scraper_history(request, wiki_type, short_name):
+    scraper = getscraperorresponse(request, wiki_type, short_name, "scraper_history", "history")
+    if isinstance(scraper, HttpResponse):  return scraper
+    
+    context = { 'selected_tab': 'history', 'scraper': scraper, "user":request.user }
+    
+    itemlog = [ ]
+    for commitentry in scraper.get_commit_log():
+        item = { "type":"commit", "rev":commitentry['rev'], "datetime":commitentry["date"] }
+        if "user" in commitentry:
+            item["user"] = commitentry["user"]
+        item['earliesteditor'] = commitentry['description'].split('|||')
+        if itemlog:
+            item["prevrev"] = itemlog[-1]["rev"]
+        item["groupkey"] = "commit|||"+ str(item['earliesteditor'])
+        itemlog.append(item)
+    itemlog.reverse()
+    
+    # now obtain the run-events and sort together
+    if scraper.wiki_type == 'scraper':
+        runevents = scraper.scraper.scraperrunevent_set.all().order_by('run_started')
+        for runevent in runevents:
+            item = { "type":"runevent", "runevent":runevent, "datetime":runevent.run_started }
+            if runevent.run_ended:
+                item["runduration"] = runevent.getduration()
+                item["durationseconds"] = runevent.getdurationseconds()
+            item["groupkey"] = "runevent"
+            if runevent.exception_message:
+                item["groupkey"] += "|||" + str(runevent.exception_message.encode('utf-8'))
+            if runevent.pid != -1:
+                item["groupkey"] += "|||" + str(runevent.pid)
+            itemlog.append(item)
+        
+        itemlog.sort(key=lambda x: x["datetime"], reverse=True)
+    
+    context["itemlog"] = itemlog
+    context["filestatus"] = scraper.get_file_status()
+    
+    return render_to_response('codewiki/history.html', context, context_instance=RequestContext(request))
 
-            #save view
-            view.save()
-            response.write(response_text)
-        #saved by form 
-        else:
-            form = forms.ViewAdministrationForm(request.POST, instance=view)
-            response =  HttpResponseRedirect(reverse('view_overview', args=[short_name]))
 
-            if form.is_valid():
-                s = form.save()
-                s.tags = form.cleaned_data['tags']
-            else:
-                response = render_to_response('codewiki/admin.html', {'selected_tab': 'overview','scraper': view,'user_owns_it': user_owns_it, 'form': form,}, context_instance=RequestContext(request))
+def code_overview(request, wiki_type, short_name):
+    scraper = getscraperorresponse(request, wiki_type, short_name, "code_overview", "overview")
+    if isinstance(scraper, HttpResponse):  return scraper
+    
+    context = {'selected_tab':'overview', 'scraper':scraper }
+    context["scraper_tags"] = scraper.gettags()
+    context["userrolemap"] = scraper.userrolemap()
+    
+    # if {% if a in b %} worked we wouldn't need these two
+    context["user_owns_it"] = (request.user in context["userrolemap"]["owner"])
+    context["user_edits_it"] = (request.user in context["userrolemap"]["owner"]) or (request.user in context["userrolemap"]["editor"])
+    
+    context["PRIVACY_STATUSES"] = PRIVACY_STATUSES_UI[0:2]  
+    if request.user.is_staff:
+        context["PRIVACY_STATUSES"] = PRIVACY_STATUSES_UI[0:3]  
+    context["privacy_status_name"] = dict(PRIVACY_STATUSES_UI).get(scraper.privacy_status)
+    
+    # view tpe
+    if wiki_type == 'view':
+        context["related_scrapers"] = scraper.relations.filter(wiki_type='scraper')
+        if scraper.language == 'html':
+            code = scraper.saved_code()
+            if re.match('<div\s+class="inline">', code):
+                context["htmlcode"] = code
+        return render_to_response('codewiki/view_overview.html', context, context_instance=RequestContext(request))
 
-    # send back whatever responbse we have
+    #
+    # else section
+    #
+    assert wiki_type == 'scraper'
+
+    context["schedule_options"] = models.SCHEDULE_OPTIONS
+    context["license_choices"] = models.LICENSE_CHOICES
+    context["related_views"] = models.View.objects.filter(relations=scraper).exclude(privacy_status="deleted")
+    
+    # this is the only one to call.  would like to know the exception that's expected
+    try:
+        dataproxy = DataStore(scraper.guid, scraper.short_name)
+        sqlitedata = dataproxy.request(("sqlitecommand", "datasummary", None, None))
+        if sqlitedata and type(sqlitedata) not in [str, unicode]:
+            context['sqlitedata'] = sqlitedata["tables"]
+    except:
+        pass
+    
+    # put in ckan connections
+    if request.user.is_staff:
+        try:
+            dataproxy.request(("sqlitecommand", "attach", "ckan_datastore", "src"))
+            ckansqlite = "select src.records.ckan_url, src.records.notes from src.resources left join src.records on src.records.id=src.resources.records_id  where src.resources.scraperwiki=?"
+            lsqlitedata = dataproxy.request(("sqlitecommand", "execute", ckansqlite, (scraper.short_name,)))
+            if lsqlitedata.get("data"):
+                context['ckanresource'] = dict(zip(lsqlitedata["keys"], lsqlitedata["data"][0]))
+        except:
+            pass
+            
+        if context.get('sqlitedata') and "ckanresource" not in context:
+            ckanparams = {"name": scraper.short_name,
+                          "title": scraper.title.encode('utf-8'),
+                          "url": settings.MAIN_URL+reverse('code_overview', args=[scraper.wiki_type, short_name])}
+            ckanparams["resources_url"] = settings.MAIN_URL+reverse('export_sqlite', args=[scraper.short_name])
+            ckanparams["resources_format"] = "Sqlite"
+            ckanparams["resources_description"] = "Scraped data"
+            context["ckansubmit"] = "http://ckan.net/package/new?%s" % urllib.urlencode(ckanparams)
+
+    return render_to_response('codewiki/scraper_overview.html', context, context_instance=RequestContext(request))
+
+
+# all remaining functions are ajax or temporary pages linked only 
+# through the site, so throwing 404s is adequate
+
+def scraper_admin_settags(request, short_name):
+    scraper = getscraperor404(request, short_name, "settags")
+    scraper.settags(request.POST.get('value', ''))  # splitting is in the library
+    return render_to_response('codewiki/includes/tagslist.html', { "scraper_tags":scraper.gettags() })
+
+def scraper_admin_privacystatus(request, short_name):
+    scraper = getscraperor404(request, short_name, "set_privacy_status")
+    scraper.privacy_status = request.POST.get('value', '')
+    scraper.save()
+    return HttpResponse(dict(PRIVACY_STATUSES_UI)[scraper.privacy_status])
+
+def scraper_admin_controleditors(request, short_name):
+    scraper = getscraperor404(request, short_name, "set_controleditors")
+    username = request.GET.get('roleuser', '')
+    lroleuser = User.objects.filter(username=username)
+    if not lroleuser:
+        return HttpResponse("Failed: username '%s' not found" % username)
+    roleuser = lroleuser[0]
+    newrole = request.GET.get('newrole', '')
+    if newrole not in ['editor', 'follow']:
+        return HttpResponse("Failed: role '%s' unrecognized" % newrole)
+    if models.UserCodeRole.objects.filter(code=scraper, user=roleuser, role=newrole):
+        return HttpResponse("Failed: user is already '%s'" % newrole)
+    newuserrole = scraper.set_user_role(roleuser, newrole)
+    context = { "role":newuserrole.role, "contributor":newuserrole.user }
+    context["user_owns_it"] = (request.user in scraper.userrolemap()["owner"])
+    if newuserrole:
+        return render_to_response('codewiki/includes/contributor.html', context, context_instance=RequestContext(request))
+    return HttpResponse("Failed: unknown")
+
+
+def view_admin(request, short_name):
+    scraper = getscraperor404(request, short_name, "changeadmin")
+    view = scraper.view
+
+    response = HttpResponse()
+    response_text = ''
+    element_id = request.POST.get('id', None)
+    if element_id == 'divAboutScraper':
+        view.description = request.POST.get('value', None)
+        response_text = textile.textile(view.description)
+
+    if element_id == 'hCodeTitle':
+        view.title = request.POST.get('value', None)
+        response_text = view.title
+
+    view.save()
+    response.write(response_text)
     return response
     
-def scraper_admin (request, short_name):
-    response = None
+    
+def scraper_admin(request, short_name):
+    scraper = getscraperor404(request, short_name, "changeadmin")
+    scraper = scraper.scraper
+    
+    response = HttpResponse()
+    response_text = ''
+    element_id = request.POST.get('id', None)
+    if element_id == 'divAboutScraper':
+        scraper.description = request.POST.get('value', None)
+        response_text = textile.textile(scraper.description)
+        
+    if element_id == 'hCodeTitle':
+        scraper.title = request.POST.get('value', None)
+        response_text = scraper.title
 
-    user = request.user
-    scraper = get_object_or_404(
-        models.Scraper.objects, short_name=short_name)
-    user_owns_it = (scraper.owner() == user)
+    if element_id == 'spnRunInterval':
+        scraper.run_interval = int(request.POST.get('value', None))
+        scraper.save() # XXX need to save so template render gets new values, bad that it saves below also!
+        response_text = render_to_string('codewiki/includes/run_interval.html', {'scraper': scraper}, context_instance=RequestContext(request))
 
-    form = forms.ScraperAdministrationForm(instance=scraper)
-    form.fields['tags'].initial = ", ".join([tag.name for tag in scraper.tags])
-    response = render_to_response('codewiki/admin.html', {'selected_tab': 'overview','scraper': scraper,'user_owns_it': user_owns_it, 'form': form,}, context_instance=RequestContext(request))
+    if element_id == 'spnLicenseChoice':
+        scraper.license = request.POST.get('value', None)
+        response_text = scraper.license
 
-    #you can only get here if you are signed in
-    if not user.is_authenticated():
-        raise Http404
-
-    if request.method == 'POST':
-        #is this an ajax post of a single value?
-        js = request.POST.get('js', None)
-        #single fields saved via ajax
-        if js:
-            response = HttpResponse()
-            response_text = ''
-            element_id = request.POST.get('id', None)       
-            if element_id == 'divAboutScraper':
-                scraper.description = request.POST.get('value', None)                                                  
-                response_text = textile.textile(scraper.description)
-                
-            if element_id == 'hCodeTitle':
-                scraper.title = request.POST.get('value', None)                                                  
-                response_text = scraper.title
-
-            if element_id == 'divEditTags':
-                scraper.tags = ", ".join([tag.name for tag in scraper.tags]) + ',' + request.POST.get('value', '')                                                  
-                response_text = ", ".join([tag.name for tag in scraper.tags])
-
-            #save scraper
-            scraper.save()
-            response.write(response_text)
-        #saved by form 
-        else:
-            form = forms.ScraperAdministrationForm(request.POST, instance=scraper)
-            response =  HttpResponseRedirect(reverse('scraper_overview', args=[short_name]))
-
-            if form.is_valid():
-                s = form.save()
-                s.tags = form.cleaned_data['tags']
-            else:
-                response = render_to_response('codewiki/admin.html', {'selected_tab': 'overview','scraper': scraper,'user_owns_it': user_owns_it, 'form': form,}, context_instance=RequestContext(request))
-
-    # send back whatever responbse we have
+    scraper.save()
+    response.write(response_text)
     return response
-    
-def scraper_delete_data(request, scraper_short_name):
-    scraper = get_object_or_404(
-        models.Scraper.objects, short_name=scraper_short_name)
-
-    if scraper.owner() != request.user:
-        raise Http404
-
-    if request.POST.get('delete_data', None) == '1':
-        models.Scraper.objects.clear_datastore(scraper_id=scraper.guid)
-
-    return HttpResponseRedirect(reverse('scraper_admin', args=[scraper_short_name]))
-
-def scraper_delete_scraper(request, scraper_short_name):
-    user = request.user
-    scraper = get_object_or_404(
-        models.Scraper.objects, short_name=scraper_short_name)
-
-    if scraper.owner() != request.user:
-        raise Http404
-
-    if request.POST.get('delete_scraper', None) == '1':
-        scraper.deleted = True
-        scraper.save()
-        request.notifications.add("Your scraper has been deleted")
-        return HttpResponseRedirect('/')
-
-    return HttpResponseRedirect(reverse('scraper_admin', args=[scraper_short_name]))
 
 
+def scraper_delete_data(request, short_name):
+    scraper = getscraperorresponse(request, "scraper", short_name, None, "delete_data")
+    if isinstance(scraper, HttpResponse):  return scraper
+    dataproxy = DataStore(scraper.guid, scraper.short_name)
+    dataproxy.request(("clear_datastore",))
+    if scraper.wiki_type == "scraper":
+        scraper.scraper.scrapermetadata_set.all().delete()
+        scraper.scraper.update_meta()
+    scraper.save()
+    request.notifications.add("Your data has been deleted")
+    return HttpResponseRedirect(reverse('code_overview', args=[scraper.wiki_type, short_name]))
 
-def scraper_map(request, scraper_short_name, map_only=False):
-    #user details
-    user = request.user
-    scraper = get_object_or_404(
-        models.Scraper.objects, short_name=scraper_short_name)
+def scraper_converttosqlitedatastore(request, short_name):
+    scraper = getscraperor404(request, short_name, "converttosqlite")
+    dataproxy = DataStore(scraper.guid, scraper.short_name)
+    dataproxy.request(("converttosqlitedatastore",))
+    if scraper.wiki_type == "scraper":
+        scraper.scraper.update_meta()
+    return HttpResponseRedirect(reverse('code_overview', args=[scraper.wiki_type, short_name]))
 
-    # Only logged in users should be able to see unpublished scrapers
-    if not scraper.published and not user.is_authenticated():
-        return render_to_response('codewiki/access_denied_unpublished.html', context_instance=RequestContext(request))
+def scraper_schedule_scraper(request, short_name):
+    scraper = getscraperor404(request, short_name, "schedulescraper")
+    if scraper.wiki_type == "scraper":
+        scraper.scraper.last_run = None
+        scraper.scraper.save()
+    return HttpResponseRedirect(reverse('code_overview', args=[scraper.wiki_type, short_name]))
 
-    user_owns_it = (scraper.owner() == user)
-    user_follows_it = (user in scraper.followers())
-    scraper_tags = Tag.objects.get_for_object(scraper)
+def scraper_run_scraper(request, short_name):
+    scraper = getscraperor404(request, short_name, "run_scraper")
+    if scraper.wiki_type == "scraper":
+        scraper.scraper.last_run = None
+        scraper.scraper.save()
+        call_command('run_scrapers', short_name=short_name)
+    return HttpResponseRedirect(reverse('code_overview', args=[scraper.wiki_type, short_name]))
 
-    num_map_points = scraper.get_metadata('num_map_points')
-    if type(num_map_points) != types.IntType:
-        num_map_points = settings.MAX_MAP_POINTS
-
-    column_order = scraper.get_metadata('map_columns')
-    if not user_owns_it:
-        private_columns = scraper.get_metadata('private_columns')
-    else:
-        private_columns = None
-
-    #get data for this scaper
-    data = models.Scraper.objects.data_summary(scraper_id=scraper.guid,
-                                               limit=num_map_points,
-                                               column_order=column_order,
-                                               private_columns=private_columns)
-    has_data = len(data['rows']) > 0
-    data = json.dumps(data)
-
-    if map_only:
-        template = 'codewiki/map_only.html'
-    else:
-        template = 'codewiki/map.html'
-
-    return render_to_response(template, {
-    'scraper_tags': scraper_tags,
-    'selected_tab': 'map',
-    'scraper': scraper,
-    'user_owns_it': user_owns_it,
-    'user_follows_it': user_follows_it,
-    'data': data,
-    'has_data': has_data,
-    'has_map': True,
-    }, context_instance=RequestContext(request))
+def scraper_screenshoot_scraper(request, wiki_type, short_name):
+    scraper = getscraperor404(request, short_name, "screenshoot_scraper")
+    call_command('take_screenshot', short_name=short_name, domain=settings.VIEW_DOMAIN, verbose=False)
+    return HttpResponseRedirect(reverse('code_overview', args=[code_object.wiki_type, short_name]))
 
 
-def view_overview (request, short_name):
-    user = request.user
-    scraper = get_object_or_404(models.View.objects, short_name=short_name)
-    
-    #get scrapers used in this view
-    related_scrapers = scraper.relations.filter(wiki_type='scraper')
-    
-    return render_to_response('codewiki/view_overview.html', {'selected_tab': 'overview', 'scraper': scraper, 'related_scrapers': related_scrapers, }, context_instance=RequestContext(request))
-    
-    
-def view_fullscreen (request, short_name):
-    user = request.user
-    scraper = get_object_or_404(models.View.objects, short_name=short_name)
-
-    return render_to_response('codewiki/view_fullscreen.html', {'scraper': scraper}, context_instance=RequestContext(request))
-
-def comments(request, wiki_type, scraper_short_name):
-
-    user = request.user
-    scraper = get_object_or_404(
-        models.Code.objects, short_name=scraper_short_name)
-
-    # Only logged in users should be able to see unpublished scrapers
-    if not scraper.published and not user.is_authenticated():
-        return render_to_response('codewiki/access_denied_unpublished.html', context_instance=RequestContext(request))
-
-    user_owns_it = (scraper.owner() == user)
-    user_follows_it = (user in scraper.followers())
-
-    scraper_owner = scraper.owner()
-    scraper_contributors = scraper.contributors()
-    scraper_followers = scraper.followers()
-
-    scraper_tags = Tag.objects.get_for_object(scraper)
-
-    dictionary = { 'scraper_tags': scraper_tags, 'scraper_owner': scraper_owner, 'scraper_contributors': scraper_contributors,
-                   'scraper_followers': scraper_followers, 'selected_tab': 'comments', 'scraper': scraper,
-                   'user_owns_it': user_owns_it, 'user_follows_it': user_follows_it }
-    return render_to_response('codewiki/comments.html', dictionary, context_instance=RequestContext(request))
+def scraper_delete_scraper(request, wiki_type, short_name):
+    scraper = getscraperorresponse(request, wiki_type, short_name, None, "delete_scraper")
+    if isinstance(scraper, HttpResponse):  return scraper
+    scraper.privacy_status = "deleted"
+    scraper.save()
+    request.notifications.add("Your %s has been deleted" % wiki_type)
+    return HttpResponseRedirect('/')
 
 
-def scraper_history(request, wiki_type, scraper_short_name):
 
-    user = request.user
-    scraper = get_object_or_404(models.Code.objects, short_name=scraper_short_name)
-
-    # Only logged in users should be able to see unpublished scrapers
-    if not scraper.published and not user.is_authenticated():
-        return render_to_response('codewiki/access_denied_unpublished.html', context_instance=RequestContext(request))
-
-    user_owns_it = (scraper.owner() == user)
-    user_follows_it = (user in scraper.followers())
-    
-    # sift through the alerts filtering on the scraper through the annoying content_type field
-    content_type = scraper.content_type()
-    history = frontend.models.Alerts.objects.filter(content_type=content_type, object_id=scraper.pk).order_by('-datetime')
-
-    dictionary = { 'selected_tab': 'history', 'scraper': scraper, 'history': history,
-                   'user_owns_it': user_owns_it, 'user_follows_it': user_follows_it }
-    
-    # extract the commit log directly from the mercurial repository
-    # (in future, the entries in django may be synchronized against this to make it possible to update the repository(ies) outside the system)
-    commitlog = [ ]
-    # should commit info about the saved   commitlog.append({"rev":commitentry['rev'], "description":commitentry['description'], "datetime":commitentry["date"], "user":user})
-    mercurialinterface = vc.MercurialInterface(scraper.get_repo_path())
-    for commitentry in mercurialinterface.getcommitlog(scraper):
-        try:    user = User.objects.get(pk=int(commitentry["userid"]))
-        except: user = None
-        commitlog.append({"rev":commitentry['rev'], "description":commitentry['description'], "datetime":commitentry["date"], "user":user})
-    commitlog.reverse()
-    dictionary["commitlog"] = commitlog
-    dictionary["filestatus"] = mercurialinterface.getfilestatus(scraper)
-    
-    return render_to_response('codewiki/history.html', dictionary, context_instance=RequestContext(request))
-
-def code(request, wiki_type, scraper_short_name):
-    user = request.user
-    scraper = get_object_or_404(models.Code.objects, short_name=scraper_short_name)
-
-    # Only logged in users should be able to see unpublished scrapers
-    if not scraper.published and not user.is_authenticated():
-        return render_to_response('scraper/access_denied_unpublished.html', context_instance=RequestContext(request))
-
-    try: rev = int(request.GET.get('rev', '-1'))
-    except ValueError: rev = -1
-
-    mercurialinterface = vc.MercurialInterface(scraper.get_repo_path())
-    status = mercurialinterface.getstatus(scraper, rev)
-
-    user_owns_it = (scraper.owner() == user)
-    user_follows_it = (user in scraper.followers())
-    scraper_tags = Tag.objects.get_for_object(scraper)
-
-    dictionary = { 'scraper_tags': scraper_tags, 'selected_tab': 'history', 'scraper': scraper,
-                   'user_owns_it': user_owns_it, 'user_follows_it': user_follows_it }
-
-    # overcome lack of subtract in template
-    if "currcommit" not in status and "prevcommit" in status and not status["ismodified"]:
-        status["modifiedcommitdifference"] = status["filemodifieddate"] - status["prevcommit"]["date"]
-
-    dictionary["status"] = status
-    dictionary["line_count"] = status["code"].count("\n") + 3
-
-    return render_to_response('codewiki/code.html', dictionary, context_instance=RequestContext(request))
 
 def raw_about_markup(request, wiki_type, short_name):
-    code_object = get_object_or_404(models.Code.objects, short_name=short_name)
-    response = HttpResponse(mimetype='text/x-web-textile')
-    response.write(code_object.description)
-    return response
+    scraper = getscraperor404(request, short_name, "getdescription")
+    return HttpResponse(scraper.description, mimetype='text/x-web-textile')
 
-
-
-def export_csv(request, scraper_short_name):
-    """
-    This could have been done by having linked directly to the api/csvout, but
-    difficult to make the urlreverse for something in a different app code here
-    itentical to scraperwiki/web/api/emitters.py CSVEmitter render()
-    """
-    scraper = get_object_or_404(
-        models.Scraper.objects,
-        short_name=scraper_short_name)
-    dictlist = models.Scraper.objects.data_dictlist(
-        scraper_id=scraper.guid,
-        limit=100000)
-
-    response = HttpResponse(mimetype='text/csv')
-    response['Content-Disposition'] = \
-        'attachment; filename=%s.csv' % (scraper_short_name)
-    response.write(CSVEmitter.to_csv(dictlist))
-
-    return response
-    #template = loader.get_template('codewiki/data.csv')
-    #context = Context({'data_tables': data_tables,})
-
-
-def scraper_table(request):
-    dictionary = { }
-    dictionary["scrapers"] = models.Scraper.objects.filter(published=True).order_by('-created_at')
-    dictionary["loggedinusers"] = set([ userscraperediting.user  for userscraperediting in models.UserScraperEditing.objects.filter(user__isnull=False)])
-    dictionary["numloggedoutusers"] = models.UserScraperEditing.objects.filter(user__isnull=True).count()
-    dictionary["numdraftscrapersediting"] = models.UserScraperEditing.objects.filter(scraper__isnull=True).count()
-    dictionary["numpublishedscrapersediting"] = models.UserScraperEditing.objects.filter(scraper__published=True).count()
-    dictionary["numunpublishedscrapersediting"] = models.UserScraperEditing.objects.filter(scraper__published=False).count()
-    dictionary["numpublishedscraperstotal"] = dictionary["scrapers"].count()
-    dictionary["numunpublishedscraperstotal"] = models.Scraper.objects.filter(published=False).count()
-    dictionary["numdeletedscrapers"] = models.Scraper.unfiltered.filter(deleted=True).count()
-    return render_to_response('codewiki/scraper_table.html', dictionary, context_instance=RequestContext(request))
-    
-
-
-def download(request, scraper_short_name):
-    """
-    TODO: DELETE?
-    """
-    scraper = get_object_or_404(models.Scraper.objects, 
-                                short_name=scraper_short_name)
-    response = HttpResponse(scraper.saved_code(), mimetype="text/plain")
-    response['Content-Disposition'] = \
-        'attachment; filename=%s.py' % (scraper.short_name)
-    return response
-
-
-def all_tags(request):
-    return render_to_response(
-        'codewiki/all_tags.html',
-        context_instance = RequestContext(request))
-
-
-def scraper_tag(request, tag):
-    tag = get_tag(tag)
-    scrapers = models.Scraper.objects.filter(published=True)
-    queryset = TaggedItem.objects.get_by_model(scrapers, tag)
-    return render_to_response('codewiki/tag.html', {
-        'queryset': queryset,
-        'tag': tag,
-        'selected_tab': 'items',
-        }, context_instance=RequestContext(request))
-
-
-def tag_data(request, tag):  # to delete
-    assert False
-
-    tag = get_tag(tag)
-    scrapers = models.Scraper.objects.filter(published=True)
-    queryset = TaggedItem.objects.get_by_model(scrapers, tag)
-
-    guids = []
-    for q in queryset:
-        guids.append(q.guid)
-    data = models.Scraper.objects.data_summary(scraper_id=guids)
-
-    return render_to_response('codewiki/tag_data.html', {
-        'data': data,
-        'tag': tag,
-        'selected_tab': 'data',
-        }, context_instance=RequestContext(request))
-
-def follow (request, scraper_short_name):
-    scraper = get_object_or_404(
-        models.Scraper.objects, short_name=scraper_short_name)
-    user = request.user
-    user_owns_it = (scraper.owner() == user)
-    user_follows_it = (user in scraper.followers())
-    # add the user to follower list
-    scraper.add_user_role(user, 'follow')
-    # Redirect after POST
+def follow(request, short_name):
+    scraper = getscraperor404(request, short_name, "setfollow")
+    scraper.add_user_role(request.user, 'follow')
     return HttpResponseRedirect('/scrapers/show/%s/' % scraper.short_name)
 
-
-def unfollow(request, scraper_short_name):
-    scraper = get_object_or_404(
-        models.Scraper.objects, short_name=scraper_short_name)
-    user = request.user
-    user_owns_it = (scraper.owner() == user)
-    user_follows_it = (user in scraper.followers())
-    # remove the user from follower list
-    scraper.unfollow(user)
-    # Redirect after POST
+def unfollow(request, short_name):
+    scraper = getscraperor404(request, short_name, "setfollow")
+    scraper.unfollow(request.user)
     return HttpResponseRedirect('/scrapers/show/%s/' % scraper.short_name)
 
-
-def twisterstatus(request):
-    if 'value' not in request.POST:
-        return HttpResponse("needs value=")
-    tstatus = json.loads(request.POST.get('value'))
-
-    twisterclientnumbers = set()  # used to delete the ones that no longer exist
-
-    # we are making objects in django to represent the objects in twister for editor windows open
-    for client in tstatus["clientlist"]:
-        # fixed attributes of the object
-        twisterclientnumber = client["clientnumber"]
-        twisterclientnumbers.add(twisterclientnumber)
-        try:
-            user = client['username'] and User.objects.get(username=client['username']) or None
-            scraper = client['guid'] and models.Scraper.objects.get(guid=client['guid']) or None
-        except:
-            continue
-
-        # identify or create the editing object
-        try:
-            userscraperediting = models.UserScraperEditing.objects.create(user=user, scraper=scraper, twisterclientnumber=twisterclientnumber)
-            userscraperediting.editingsince = datetime.datetime.now()
-        except IntegrityError:
-            userscraperediting = models.UserScraperEditing.objects.get(twisterclientnumber=twisterclientnumber)
-
-        assert models.UserScraperEditing.objects.filter(twisterclientnumber=twisterclientnumber).count() == 1, client
-
-        # updateable values of the object
-        userscraperediting.twisterscraperpriority = client['scrapereditornumber']
-
-        # this condition could instead reference a running object
-        if client['running'] and not userscraperediting.runningsince:
-            userscraperediting.runningsince = datetime.datetime.now()
-        if not client['running'] and userscraperediting.runningsince:
-            userscraperediting.runningsince = None
-
-        userscraperediting.save()
-
-    # discard now closed values of the object
-    for userscraperediting in models.UserScraperEditing.objects.all():
-        if userscraperediting.twisterclientnumber not in twisterclientnumbers:
-            userscraperediting.delete()
-            # or could use the field: closedsince  = models.DateTimeField(blank=True, null=True)
-    return HttpResponse("Howdy ppp ")
-
-
-def rpcexecute_dummy(request, scraper_short_name, revision = None):
-    response = HttpResponse()
-    response.write('''
-    <html>
-      <head>
-        <script type='text/javascript' src='http://www.google.com/jsapi'></script>
-        <script type='text/javascript'>
-          google.load('visualization', '1', {'packages':['annotatedtimeline']});
-          google.setOnLoadCallback(drawChart);
-          function drawChart() {
-            var data = new google.visualization.DataTable();
-            data.addColumn('date', 'Date');
-            data.addColumn('number', 'Sold Pencils');
-            data.addColumn('string', 'title1');
-            data.addColumn('string', 'text1');
-            data.addColumn('number', 'Sold Pens');
-            data.addColumn('string', 'title2');
-            data.addColumn('string', 'text2');
-            data.addRows([
-              [new Date(2008, 1 ,1), 30000, undefined, undefined, 40645, undefined, undefined],
-              [new Date(2008, 1 ,2), 14045, undefined, undefined, 20374, undefined, undefined],
-              [new Date(2008, 1 ,3), 55022, undefined, undefined, 50766, undefined, undefined],
-              [new Date(2008, 1 ,4), 75284, undefined, undefined, 14334, 'Out of Stock','Ran out of stock on pens at 4pm'],
-              [new Date(2008, 1 ,5), 41476, 'Bought Pens','Bought 200k pens', 66467, undefined, undefined],
-              [new Date(2008, 1 ,6), 33322, undefined, undefined, 39463, undefined, undefined]
-            ]);
-
-            var chart = new google.visualization.AnnotatedTimeLine(document.getElementById('chart_div'));
-            chart.draw(data, {displayAnnotations: true});
-          }
-        </script>
-      </head>
-
-      <body style="height:10000px;">
-        <div id='chart_div' style='width: 700px; height: 240px;'></div>
-
-      </body>
-    </html>
-    '''
-    )
-    print "fdsfdsdfs"
-    return response
-                        
-# quick hack the manage the RPC execute feature 
-# to test this locally you need to use python manage.py runserver twice, on 8000 and on 8010, 
-# and view the webpage on 8010
-def rpcexecute(request, scraper_short_name, revision = None):
-    scraper = get_object_or_404(models.View.objects, short_name=scraper_short_name)
-    runner_path = "%s/runner.py" % settings.FIREBOX_PATH
-    failed = False
-
-    rargs = { }
-    for key in request.POST.keys():
-        rargs[str(key)] = request.POST.get(key)
-    for key in request.GET.keys():
-        rargs[str(key)] = request.GET.get(key)
-    func = rargs.pop("function", None)
-    for key in rargs.keys():
-        try: 
-            rargs[key] = json.loads(rargs[key])
-        except:
-            pass
-
-    args = [runner_path]
-    args.append('--guid=%s' % scraper.guid)
-    args.append('--language=%s' % scraper.language.lower())
-    args.append('--name=%s' % scraper.short_name)
-    args.append('--cpulimit=80')
-    
-    runner = subprocess.Popen(args, shell=False, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
-    runner.stdin.write(scraper.saved_code(revision))
-    
-    # append in the single line at the bottom that gets the rpc executed with the right function and arguments
-    if func:
-        runner.stdin.write("\n\n%s(**%s)\n" % (func, repr(rargs)))
-
-    runner.stdin.close()
-
-    response = HttpResponse()
-    for line in runner.stdout:
-        try:
-            message = json.loads(line)
-            print "mmmm", message
-            if message['message_type'] == 'fail':
-                failed = True
-            elif message['message_type'] == 'exception':
-                response.write("<h3>%s</h3>\n" % str(message["jtraceback"].get("exceptiondescription")).replace("<", "&lt;"))
-                for stackentry in message["jtraceback"]["stackdump"]:
-                    response.write("<h3>%s</h3>\n" % re.replace("<", "&lt;", str(stackentry).replace("<", "&lt;")))
-
-            # recover the message from all the escaping
-            if message['message_type'] == "console" and message.get('message_sub_type') != 'consolestatus':
-                response.write(message["content"])
-
-        except:
-            pass
-        
-    return response
-
-
-def htmlview(request, scraper_short_name):
-    view = get_object_or_404(models.View.objects, short_name=scraper_short_name)
-    return HttpResponse(view.saved_code())
-
-def run_event(request, event_id):
-    event = get_object_or_404(models.ScraperRunEvent, id=event_id)
-    return render_to_response('codewiki/run_event.html', {'event': event}, context_instance=RequestContext(request))
-
-def commit_event(request, event_id):
-    event = get_object_or_404(models.CodeCommitEvent, id=event_id)
-    return render_to_response('codewiki/commit_event.html', {'event': event}, context_instance=RequestContext(request))
-
-def running_scrapers(request):
-    events = models.ScraperRunEvent.objects.filter(run_ended=None)
-    return render_to_response('codewiki/running_scrapers.html', {'events': events}, context_instance=RequestContext(request))
 
 def choose_template(request, wiki_type):
-    form = forms.ChooseTemplateForm(wiki_type)
-    return render_to_response('codewiki/ajax/choose_template.html', {'wiki_type': wiki_type, 'form': form}, context_instance=RequestContext(request))
+    context = { "wiki_type":wiki_type }
+    context["templates"] = models.Code.objects.filter(isstartup=True, wiki_type=wiki_type).exclude(privacy_status="deleted").order_by('language')
+    context["sourcescraper"] = request.GET.get('sourcescraper', '')
+    
+    if request.GET.get('ajax'):
+        template = 'codewiki/includes/choose_template.html'
+    else:
+        template = 'codewiki/choose_template.html'
+    
+    if wiki_type == "scraper":
+        context["languages"] = models.code.SCRAPER_LANGUAGES
+    else:
+        context["languages"] = models.code.VIEW_LANGUAGES
+    
+    return render_to_response(template, context, context_instance=RequestContext(request))
 
 
-def chosen_template(request, wiki_type):
-    template = request.GET.get('template', None)
-    language = request.GET.get('language', None)
-    template_arg = ''
-    if template:
-        template_arg = '?template=' + template
-    return HttpResponseRedirect(reverse('editor', args=(wiki_type, language)) + template_arg)
+    
+def delete_draft(request):
+    if request.session.get('ScraperDraft', False):
+        del request.session['ScraperDraft']
+    request.notifications.used = True   # Remove any pending notifications, i.e. the "don't worry, your scraper is safe" one
+    return HttpResponseRedirect(reverse('frontpage'))
+
+
+def convtounicode(text):
+    try:   return unicode(text)
+    except UnicodeDecodeError:  pass
+        
+    try:   return unicode(text, encoding='utf8')
+    except UnicodeDecodeError:  pass
+    
+    try:   return unicode(text, encoding='latin1')
+    except UnicodeDecodeError:  pass
+        
+    return unicode(text, errors='replace')
+
+
+def proxycached(request):
+    cacheid = request.POST.get('cacheid')
+    
+    # delete this later when no more need for debugging
+    if not cacheid:  
+        cacheid = request.GET.get('cacheid')
+    
+    if not cacheid:
+        return HttpResponse(json.dumps({'type':'error', 'content':"No cacheid found"}), mimetype="application/json")
+    
+    proxyurl = settings.HTTPPROXYURL + "/Page?" + cacheid
+    result = { 'proxyurl':proxyurl, 'cacheid':cacheid }
+    try:
+        fin = urllib2.urlopen(proxyurl)
+        result["mimetype"] = fin.headers.type
+        if fin.headers.maintype == 'text' or fin.headers.type == "application/json":
+            result['content'] = convtounicode(fin.read())
+        else:
+            result['content'] = base64.encodestring(fin.read())
+            result['encoding'] = "base64"
+    except urllib2.URLError, e: 
+        result['type'] = 'exception'
+        result['content'] = str(e)
+    
+    return HttpResponse(json.dumps(result), mimetype="application/json")
+
+
+def export_csv(request, short_name):
+    tablename = request.GET.get('tablename', "swdata")
+    query = "select * from `%s`" % tablename
+    qsdata = { "name":short_name.encode('utf-8'), "query":query.encode('utf-8'), "format":"csv" }
+    return HttpResponseRedirect("%s?%s" % (reverse("api:method_sqlite"), urllib.urlencode(qsdata)))
+
+
+    # could be replaced with the dataproxy chunking technology now available in there,
+    # but as it's done, leave it here
+def stream_sqlite(dataproxy, filesize, memblock=100000):
+    for offset in range(0, filesize, memblock):
+        sqlitedata = dataproxy.request(("sqlitecommand", "downloadsqlitefile", offset, memblock))
+        content = sqlitedata.get("content")
+        if sqlitedata.get("encoding") == "base64":
+            content = base64.decodestring(content)
+        yield content
+        assert len(content) == sqlitedata.get("length"), len(content)
+        if sqlitedata.get("length") < memblock:
+            break
+
+# see http://stackoverflow.com/questions/2922874/how-to-stream-an-httpresponse-with-django
+@condition(etag_func=None)
+def export_sqlite(request, short_name):
+    scraper = getscraperor404(request, short_name, "exportsqlite")
+    
+    dataproxy = DataStore(scraper.guid, scraper.short_name)
+    initsqlitedata = dataproxy.request(("sqlitecommand", "downloadsqlitefile", 0, 0))
+    if "filesize" not in initsqlitedata:
+        return HttpResponse(str(initsqlitedata), mimetype="text/plain")
+    
+    response = HttpResponse(stream_sqlite(dataproxy, initsqlitedata["filesize"]), mimetype='application/octet-stream')
+    response['Content-Disposition'] = 'attachment; filename=%s.sqlite' % (short_name)
+    response["Content-Length"] = initsqlitedata["filesize"]
+    return response

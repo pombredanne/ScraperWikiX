@@ -22,21 +22,43 @@ import string
 import uuid
 import ConfigParser
 
+try    : import json
+except : import simplejson as json
+
 global config
 
-USAGE      = " [--varDir=dir] [--enqueue] [--subproc] [--daemon] [--config=file] [--name=name]"
-child      = None
-umlAddr    = []
-varDir     = '/var'
-config     = None
-name       = 'dispatcher'
-enqueue    = False
-uid    = None
-gid    = None
+USAGE   = " [--varDir=dir] [--enqueue] [--subproc] [--daemon] [--config=file] [--name=name] [--monitor]"
+child   = None
+umlAddr = []
+varDir  = '/var'
+config  = None
+name    = 'dispatcher'
+enqueue = False
+uid     = None
+gid     = None
 
-UMLList    = []
-UMLLock    = None
-UMLPtr     = None
+UMLList = []
+UMLLock = None
+UMLPtr  = None
+
+class Scraper :
+
+    def __init__ (self, status) :
+
+        self.m_status = status
+        self.m_socket = None
+
+    def setSocket (self, socket) :
+
+        self.m_socket = socket
+
+    def runID (self) :
+
+        return self.m_status['runID']
+
+    def socket (self) :
+
+        return self.m_socket
 
 class UML :
 
@@ -60,16 +82,17 @@ class UML :
         @param  count   : Scraper count
         """
 
-        self.m_name    = name
-        self.m_server  = server
-        self.m_port    = port
-        self.m_config  = None
-        self.m_count   = count
-        self.m_free    = count
-        self.m_closing = False
-        self.m_status  = {}
-        self.m_lock    = threading.Semaphore(count)
-        self.m_next    = None
+        self.m_name     = name
+        self.m_server   = server
+        self.m_port     = port
+        self.m_config   = None
+        self.m_count    = count
+        self.m_free     = count
+        self.m_closing  = False
+        self.m_scrapers = {}
+        self.m_lock     = threading.Semaphore(count)
+        self.m_next     = None
+        self.m_dead     = False
 
     def setNextUML (self, next) :
 
@@ -130,11 +153,16 @@ class UML :
         @return     : True if server is free
         """
 
-        return self.m_free > 0
+        if self.m_dead      : return False
+        if self.m_free <= 0 : return False
+        return True
 
     def active (self) :
 
         return self.m_free < self.m_count
+
+    def dead(self):
+        return self.m_dead
 
     def acquire (self, status) :
 
@@ -147,15 +175,15 @@ class UML :
 
         @type   status  : Dictionary
         @param  status  : Status information
-        @rtype      : UUID
-        @return     : Request identifier
+        @rtype          : UUID
+        @return         : Request identifier
         """
 
         #  The status is marked as state=W(aiting) before the UML
         #  semephore is acquired, and changed to state=R(unning) after.
         #
         id = uuid.uuid4()
-        self.m_status[id] = status
+        self.m_scrapers[id] = Scraper (status)
         status['state']   = 'W'
         status['name' ]   = self.m_name
         status['time' ]   = time.time()
@@ -179,7 +207,7 @@ class UML :
 
         self.m_lock.release()
         self.m_free += 1
-        del self.m_status[id]
+        del self.m_scrapers[id]
 
         return self.m_closing and not self.active()
 
@@ -194,13 +222,14 @@ class UML :
         """
 
         config.append \
-                (       "name=%s;server=%s;port=%d;count=%d;free=%d;closing=%s" % \
+                (       "name=%s;server=%s;port=%d;count=%d;free=%d;closing=%s;dead=%s" % \
                         (       self.m_name,
                                 self.m_server,
                                 self.m_port,
                                 self.m_count,
                                 self.m_free,
-                                self.m_closing
+                                self.m_closing,
+                                self.m_dead
                 )       )
                 
 
@@ -214,12 +243,50 @@ class UML :
         @param  status  : Status list
         """
 
-        for key, value in self.m_status.items() :
-           status.append (string.join([ '%s=%s' % (k,v) for k, v in value.items()], ';'))
+        for key, value in self.m_scrapers.items() :
+           status.append (string.join([ '%s=%s' % (k,v) for k, v in value.m_status.items()], ';'))
+
+        # The above output is interpreted in web/codewiki/management/commands/run_scrapers.py by
+        # splitting on ; and then =. Doing it this way means that m_status can be used to accumulate
+        # information without needing the code here to be changed.
 
     def close (self) :
 
         self.m_closing = True
+
+    def setSocket (self, id, socket) :
+
+        self.m_scrapers[id].setSocket (socket)
+
+    def killScraper (self, runID) :
+
+        for key, scraper in self.m_scrapers.items() :
+            if scraper.runID() == runID :
+                try    :
+                    scraper.socket().close()
+                    return True
+                except :
+                    return False
+        return None
+
+    def killAll (self) :
+
+        for key, scraper in self.m_scrapers.items() :
+            try    : scraper.socket().close()
+            except : pass
+
+    def scan (self) :
+
+        try    :
+            import urllib2
+            print >>sys.stderr, "http://%s:%s/Status" % (self.m_server, self.m_port)
+            res = urllib2.urlopen("http://%s:%s/Status" % (self.m_server, self.m_port), timeout = 2).read()
+            self.m_dead = False
+            return
+        except :
+            pass
+        self.m_dead = True
+        self.killAll ()
 
 
 def allocateUML (queue = False, **status) :
@@ -331,7 +398,6 @@ class DispatcherHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
         """
 
         self.m_toRemove = []
-        self.m_swlog    = None
 
         BaseHTTPServer.BaseHTTPRequestHandler.__init__ (self, *alist, **adict)
 
@@ -345,14 +411,6 @@ class DispatcherHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
             try    : os.remove (name)
             except : pass
 
-    def swlog (self) :
-
-        if self.m_swlog is None :
-            import swlogger
-            self.m_swlog = swlogger.SWLogger(config)
-            self.m_swlog.connect ()
-
-        return self.m_swlog
 
     def _connect_to (self, server, port, soc) :
 
@@ -490,10 +548,11 @@ class DispatcherHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
 
         UMLLock.acquire()
 
-        UMLList.append (UML(uml, host, via, count))
-        for i in range(len(UMLList)) :
-            UMLList[i].setNextUML(UMLList[(i+1) % len(UMLList)])
-        UMLPtr  = UMLList[0]
+        if name not in [uml.name() for uml in UMLList]:
+            UMLList.append (UML(name, host, via, count))
+            for i in range(len(UMLList)) :
+                UMLList[i].setNextUML(UMLList[(i+1) % len(UMLList)])
+            UMLPtr  = UMLList[0]
 
         UMLLock.release()
 
@@ -531,10 +590,10 @@ class DispatcherHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
 
         UMLLock.acquire()
 
-        #  If the UML is not active then it can be removed now and a
-        #  report to this effect returned.
+        #  If the UML is not active or it is dead then it can be removed now 
+        #  and a report to this effect returned.
         #
-        if not uml.active() :
+        if not uml.active() or uml.dead():
             UMLList = [ u for u in UMLList if u is not uml ]
             for i in range(len(UMLList)) :
                 UMLList[i].setNextUML(UMLList[(i+1) % len(UMLList)])
@@ -543,16 +602,40 @@ class DispatcherHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
             self.sendOK ()
             self.connection.send  ('UML %s removed' % name)
             self.connection.send  ('\n')
-            return
-
+        else:
         #  If active then mark as closing and report such. No scrapers
         #  will be allocated to the UML and it will be removed when it
         #  is next inactive.
         #
-        uml.close()
+            uml.close()
+            UMLLock.release()
+            self.sendOK ()
+            self.connection.send  ('UML %s closing' % name)
+            self.connection.send  ('\n')
+
+    def killScraper (self, runID) :
+
+        """
+        Kill a scraper
+
+        @type   runID   : String
+        @param  runID   : Run identifier
+        """
+
+        global UMLPtr
+        global UMLList
+
+        killed = None
+        UMLLock.acquire()
+        for uml in UMLList :
+            killed = uml.killScraper (runID)
+            if killed is not None :
+                break
         UMLLock.release()
         self.sendOK ()
-        self.connection.send  ('UML %s closing' % name)
+        if killed is True  : self.connection.send  ('Scraper %s killed'     % runID)
+        if killed is False : self.connection.send  ('Scraper %s not killed' % runID)
+        if killed is None  : self.connection.send  ('Scraper %s not found'  % runID)
         self.connection.send  ('\n')
 
     def do_GET (self) :
@@ -583,6 +666,11 @@ class DispatcherHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
             self.connection.close()
             return
 
+        if path == '/Kill'   :
+            self.killScraper(query)
+            self.connection.close()
+            return
+
         try    : scraperID  = self.headers['x-scraperid' ]
         except : scraperID  = None
         try    : testName   = self.headers['x-testname'  ]
@@ -590,20 +678,22 @@ class DispatcherHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
         try    : runID      = self.headers['x-runid'     ]
         except : runID      = ''
 
-        self.swlog().log (scraperID, runID, 'D.START', arg1 = self.path)
 
         if scm != 'http' or fragment or netloc :
             self.send_error (400, "bad url %s" % self.path)
-            self.swlog().log (scraperID, runID, 'D.ERROR', arg1 = 'Bad URL', arg2 = self.path)
             return
 
         uml, id = allocateUML (enqueue, scraperID = scraperID, runID = runID, testName = testName)
         if uml is None :
             self.send_error (400, "No server free to run your scraper, please try again in a few minutes")
-            self.swlog().log (scraperID, runID, 'D.ERROR', arg1 = 'No UML', arg2 = '%s' % (self.path))
             return
 
+        self.sendOK()
+        json_msg = json.dumps({'message_type': 'executionstatus', 'content': 'startingrun', 'runID': runID, 'uml': uml.name()}) + '\n'
+        self.connection.send(json_msg)
+
         soc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        uml.setSocket (id, soc)
 
         try :
             if self._connect_to (uml.server(), uml.port(), soc) :
@@ -619,14 +709,12 @@ class DispatcherHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
                 for name, value in self.headers.items() :
                     soc.send ("%s: %s\r\n" % (name, value))
                 soc.send ("\r\n")
-                self.swlog().log (scraperID, runID, 'D.REQUEST')
                 self._read_write (soc)
 
         finally :
             soc            .close()
             self.connection.close()
 
-        self.swlog().log (scraperID, runID, 'D.END')
         releaseUML       (uml, id)
 
     def _read_write (self, soc, idle = 0x7ffffff) :
@@ -647,7 +735,10 @@ class DispatcherHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
         busy  = True
         while busy :
             count        += pause
-            (ins, _, exs) = select.select(iw, ow, iw, pause)
+            try    :
+                (ins, _, exs) = select.select(iw, ow, iw, pause)
+            except :
+                break
             if exs :
                 break
             if ins :
@@ -669,6 +760,36 @@ class DispatcherHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
     do_POST   = do_GET
     do_PUT    = do_GET
     do_DELETE = do_GET
+
+
+class UMLScanner (threading.Thread) :
+
+    def __init__ (self) :
+
+        threading.Thread.__init__ (self)
+
+    def run (self) :
+
+        global UMLPtr
+        global UMLLock
+
+        while True :
+            time.sleep(10)
+            print >>sys.stderr, "MONITOR"
+            UMLLock.acquire()
+            if UMLPtr is None :
+                UMLLock.release()
+                continue
+            umlList = []
+            uml = UMLPtr
+            while True :
+                umlList.append (uml)
+                uml = uml.nextUML()
+                if uml is UMLPtr :
+                    break
+            UMLLock.release()
+            for uml in umlList :
+                uml.scan ()
 
 
 class DispatcherHTTPServer \
@@ -703,6 +824,7 @@ if __name__ == '__main__' :
 
     subproc = False
     daemon  = False
+    monitor = False
     confnam = 'uml.cfg'
 
     for arg in sys.argv[1:] :
@@ -737,6 +859,10 @@ if __name__ == '__main__' :
 
         if arg == '--daemon'  :
             daemon  = True
+            continue
+
+        if arg == '--monitor' :
+            monitor = True
             continue
 
         if arg == '--enqueue' :
@@ -814,5 +940,10 @@ if __name__ == '__main__' :
 
     UMLPtr  = len(UMLList) > 0 and UMLList[0] or None
     UMLLock = threading.Lock()
+
+    if monitor :
+
+        mtr = UMLScanner ()
+        mtr.start ()
 
     execute (config.getint (name, 'port'))

@@ -5,24 +5,27 @@ __doc__ = """ScraperWiki HTTP Proxy"""
 
 __version__ = "ScraperWiki_0.0.1"
 
-import  BaseHTTPServer
-import  SocketServer
-import  select
-import  socket
-import  urlparse
-import  signal
-import  os
-import  sys
-import  time
-import  threading
-import  string 
-import  urllib   # should this be urllib2? -- JGT
-import  ConfigParser
-import  hashlib
-import  OpenSSL
-import  re
+import BaseHTTPServer
+import SocketServer
+import select
+import socket
+import urlparse
+import signal
+import os
+import sys
+import time
+import threading
+import string 
+import urllib   # should this be urllib2? -- JGT
+import urllib2
+import ConfigParser
+import hashlib
+import OpenSSL
+import re
+import memcache
 
 global config
+global cache_client
 
 USAGE       = " [--uid=#] [--gid=#] [--allowAll] [--varDir=dir] [--subproc] [--daemon] [--config=file] [--useCache] [--mode=H|S|P]"
 child       = None
@@ -36,6 +39,7 @@ allowAll    = False
 mode        = 'P'
 statusLock  = None
 statusInfo  = {}
+cache_client = None
 
 class HTTPProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
 
@@ -49,6 +53,7 @@ class HTTPProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
     server_version = "HTTPProxy/" + __version__
     rbufsize       = 0
 
+
     def __init__ (self, *alist, **adict) :
 
         """
@@ -56,19 +61,11 @@ class HTTPProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
         the base class constructor.
         """
 
-        self.m_swlog   = None
         self.m_allowed = []
         self.m_blocked = []
+
+
         BaseHTTPServer.BaseHTTPRequestHandler.__init__ (self, *alist, **adict)
-
-    def swlog (self) :
-
-        if self.m_swlog is None :
-            import swlogger
-            self.m_swlog = swlogger.SWLogger(config)
-            self.m_swlog.connect ()
-
-        return self.m_swlog
 
     def log_message (self, format, *args) :
 
@@ -84,7 +81,7 @@ class HTTPProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
         BaseHTTPServer.BaseHTTPRequestHandler.log_message (self, format, *args)
         sys.stderr.flush ()
 
-    def hostAllowed (self, path, scraperID, runID) :
+    def hostAllowed (self, path, scraperID) :
 
         """
         See if access to a specified host is allowed. These are specified as a list
@@ -104,6 +101,10 @@ class HTTPProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
         if allowAll :
             return True
 
+        # XXX Workaround - if ident failed then allow by default
+        if not scraperID:
+            return True
+
         allowed = False
         if re.match("http://127.0.0.1[/:]", path):
             allowed = True
@@ -117,7 +118,7 @@ class HTTPProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
         for block in self.m_blocked :
             if re.match(block, path) :
                 allowed = False
-
+        
         return allowed
 
     def _connect_to (self, scheme, netloc) :
@@ -154,6 +155,17 @@ class HTTPProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
 
         return soc
 
+    def sendReply (self, reply) :
+
+        self.connection.send  ('HTTP/1.0 200 OK\n')
+        self.connection.send  ('Connection: Close\n')
+        self.connection.send  ('Pragma: no-cache\n')
+        self.connection.send  ('Cache-Control: no-cache\n')
+        self.connection.send  ('Content-Type: text/text\n')
+        self.connection.send  ('\n' )
+        self.connection.send  (reply)
+        self.connection.send  ('\n' )
+
     def sendStatus (self) :
 
         """
@@ -173,14 +185,23 @@ class HTTPProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
             pass
         statusLock.release()
 
-        self.connection.send  ('HTTP/1.0 200 OK\n')
-        self.connection.send  ('Connection: Close\n')
-        self.connection.send  ('Pragma: no-cache\n')
-        self.connection.send  ('Cache-Control: no-cache\n')
-        self.connection.send  ('Content-Type: text/text\n')
-        self.connection.send  ('\n')
-        self.connection.send  (string.join(status, '\n'))
-        self.connection.send  ('\n')
+        self.sendReply  (string.join(status, '\n'))
+
+    def sendPage (self, id) :
+        """
+        Retreive page from cache if possible
+        """
+        # TODO: Add better handling for the page not being found in the cache
+        if not id:
+            self.log_message('No ID argument passed to sendPage()')
+            return 
+
+        page = cache_client.get(id)
+        if not page:
+            self.sendReply ('Page not found in cache')
+            return
+
+        self.connection.sendall (page)
 
     def ident (self) :
 
@@ -204,9 +225,16 @@ class HTTPProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
         if   mode == 'H' : port = 80
         elif mode == 'S' : port = 443
         else             : port = loc[1]
-        ident     = urllib.urlopen ('http://%s:9001/Ident?%s:%s' % (rem[0], rem[1], port)).read()
+        
+        for attempt in range(5):
+            try:
+                ident = urllib2.urlopen('http://%s:9001/Ident?%s:%s' % (rem[0], rem[1], port)).read()
+                if ident.strip() != "":
+                    break
+            except:
+                pass
 
-        for line in string.split (ident, '\n') :
+        for line in string.split (ident, '\n'):
             if line == '' :
                 continue
             key, value = string.split (line, '=')
@@ -239,11 +267,9 @@ class HTTPProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
         (scheme, netloc, path, params, query, fragment) = urlparse.urlparse (self.path, 'http')
         scraperID, runID, cache = self.ident ()
 
-        self.swlog().log (scraperID, runID, 'P.CONNECT', arg1 = self.path)
 
-        if not self.hostAllowed (self.path, scraperID, runID) :
+        if not self.hostAllowed (self.path, scraperID) :
             self.send_error (403, self.blockmessage(self.path))
-            self.swlog().log (scraperID, runID, 'P.ERROR', arg1 = 'Denied',  arg2 = self.path)
             return
 
         try:
@@ -260,13 +286,31 @@ class HTTPProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
                 soc.close()
             self.connection.close()
 
-        self.swlog().log (scraperID, runID, 'P.DONE', arg1 = self.path)
 
     def notify (self, host, **query) :
 
         query['message_type'] = 'sources'
         try    : urllib.urlopen ('http://%s:9001/Notify?%s'% (host, urllib.urlencode(query))).read()
         except : pass
+
+    def bodyOffset (self, page) :
+
+        try    : offset1 = string.index (page, '\r\n\r\n')
+        except : offset1 = 0x3fffffff
+        try    : offset2 = string.index (page, '\n\n'    )
+        except : offset2 = 0x3fffffff
+
+        if offset1 < offset2 : return offset1 + 4
+        return offset2 + 2
+
+    def fetchedDiffers (self, fetched, cached) :
+        if cached is None:
+            return True
+        else:
+            fbo = self.bodyOffset(fetched)
+            cbo = self.bodyOffset(cached)
+            return fetched[fbo:] != cached[cbo:]
+
 
     def retrieve (self, method) :
 
@@ -283,10 +327,11 @@ class HTTPProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
         #  This ensures that we only add headers into requests that are going into the scraperwiki
         #  system (or a runlocal sw system)
         #
+        #  Future: make useCache a regexp to identify ULRs which should be cached. This
+        #          can subsume isSW
+        #
         (scheme, netloc, path, params, query, fragment) = urlparse.urlparse (self.path, 'http')
-        isSW = netloc.endswith('scraperwiki.com')
-        if netloc[:9] == '127.0.0.1':
-            isSW = True
+        isSW = netloc.startswith('127.0.0.1') or netloc.endswith('scraperwiki.com')
 
         #  Path /Status returns status information.
         #
@@ -295,18 +340,20 @@ class HTTPProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
             self.connection.close()
             return
 
-        scraperID, runID, cache = self.ident ()
-        self.swlog().log (scraperID, runID, 'P.GET', arg1 = self.path)
+        if path == '/Page' :
+            self.sendPage   (query)
+            self.connection.close()
+            return            
+
+        scraperID, runID, cacheFor = self.ident ()
 
         if path == '' or path is None :
             path = '/'
 
         if scheme not in [ 'http', 'https' ] or fragment or not netloc :
             self.send_error (400, "Malformed URL %s" % self.path)
-            self.swlog().log (scraperID, runID, 'P.ERROR', arg1 = 'Bad URL', arg2 = self.path)
             return
-        if not self.hostAllowed (self.path, scraperID, runID) :
-            self.swlog().log (scraperID, runID, 'P.ERROR', arg1 = 'Denied',  arg2 = self.path)
+        if not self.hostAllowed (self.path, scraperID) :
             self.send_error (403, self.blockmessage(self.path))
             return
 
@@ -316,87 +363,68 @@ class HTTPProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
             except : pass
             statusLock.release ()
 
-        ctag    = None
-        used    = None
-        content = None
-        bytes   = 0
-        cacheid = ''
+        ctag     = None
+        content  = None
+        bytes    = 0
+        cached   = None
+        fetched  = None
+        ddiffers = False
 
-        #  Check if caching might be possible. This is the case if
-        #   * Caching has been enabled
-        #   * The x-cache header is greater than zero
+        #  Generate a hash on the request ...
+        #  "cbits" will be set to a 3-element list comprising the path (including
+        #  query bits), the url-encoded content if any, and the cookie string, if any.
         #
-        if not isSW and useCache and cache > 0 :
-            #  "cbits" will be set to a 3-element list comprising the path (including
-            #  query bits), the url-encoded content if any, and the cookie string, if any.
-            #
-            cbits = None
+        cbits = None
 
-            #  GET is easy, note the path, the content is empty. Cookies will be set
-            #  later.
-            #
-            if method == "GET" :
-
-                cbits = [ self.path, '', '' ]
-
-            #  For POST, check that 'content-type' is 'application/x-www-form-urlencoded'
-            #  and that we have a content length. If so then the content is read and
-            #  noted along with the path. The content will be passed on later.
-            #
-            if method == "POST" \
-                and 'content-length' in self.headers \
-                and 'content-type'   in self.headers \
-                and self.headers['content-type'] == 'application/x-www-form-urlencoded' :
-
-                clen    = int(self.headers['content-length'])
-                content = ''
-                while len(content) < clen :
-                    data = self.connection.recv (clen - len(content))
-                    if data is None or data == '' :
-                        break
-                    content += data
-
-                cbits = [ self.path, content, '' ]
-
-            #  If we can cache then add cookies if any, and calculate a hash on
-            #  the path, content and cookies. Hive off the first two digit pairs
-            #  for directories (which are created if needed) and generate a
-            #  path name.
-            #
-            if cbits is not None :
-
-                if 'cookie' in self.headers :
-                    cbits[2] = self.headers['cookie']
-
-                ctag = hashlib.sha1(string.join (cbits, '____')).hexdigest()
-
-        db = None
-        if ctag :
-            try :
-                import MySQLdb
-                db      = MySQLdb.connect \
-                        (    host       = config.get (varName, 'dbhost'), 
-                             user       = config.get (varName, 'user'  ), 
-                             passwd     = config.get (varName, 'passwd'),
-                             db         = config.get (varName, 'db'    ),
-                             charset    = 'utf8'
-                        )
-            except :
-                pass
-
-        #  Try opening a possible cache file. If this succeeds then we can
-        #  simply send the content as the reply. If not then we go to the real
-        #  server, possibly storing results in the cacahe.
+        #  GET is easy, note the path, the content is empty. Cookies will be set
+        #  later.
         #
-        try    :
-            cursor    = db.cursor()
-            cursor.execute ('select id, page from httpcache where tag = %s and time_to_sec(timediff(now(), stamp)) < %s', [ ctag, cache ])
-            cacheid, page  = cursor.fetchone()
-            cursor    = db.cursor()
-            cursor.execute ('update httpcache set stamp = now(), hits = hits + 1 where tag = %s', [ ctag ])
-            used = 'CACHED'
-        except :
+        if method == "GET" :
+            cbits = [ self.path, '', '' ]
+
+        #  For POST, check that 'content-type' is 'application/x-www-form-urlencoded'
+        #  and that we have a content length. If so then the content is read and
+        #  noted along with the path. The content will be passed on later.
+        #
+        if method == "POST" \
+            and 'content-length' in self.headers \
+            and 'content-type'   in self.headers \
+            and self.headers['content-type'] == 'application/x-www-form-urlencoded' :
+    
+            clen    = int(self.headers['content-length'])
+            content = ''
+            while len(content) < clen :
+                data = self.connection.recv (clen - len(content))
+                if data is None or data == '' :
+                    break
+                content += data
+
+            cbits = [ self.path, content, '' ]
+
+        #  If we can cache then add cookies if any, and calculate a hash on
+        #  the path, content and cookies.
+        #
+        if cbits is not None :
+
+            if 'cookie' in self.headers :
+                cbits[2] = self.headers['cookie']
+            ctag = hashlib.sha1(string.join (cbits, '____')).hexdigest()
+
+        if cache_client and useCache:
+            cached = cache_client.get( ctag )
+        else:
+            cached = None
+
+        #  Actually fetch the page if:
+        #   * There is no cache tag
+        #   * Not using the cache
+        #   * Cache timeout is set to zero
+        #   * Page was not in the cache anyway
+        #
+        if isSW or cacheFor <= 0 or cached is None:
+
             startat = time.strftime ('%Y-%m-%d %H:%M:%S')
+            soc = None
             try :
                 soc = self._connect_to (scheme, netloc)
                 if soc is not None :
@@ -424,57 +452,66 @@ class HTTPProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
                     soc.send ("\r\n")
                     if content :
                         soc.send (content)
-                    page  = self.getResponse(soc)
-                    if db :
-                        cursor = db.cursor()
-                        cursor.execute \
-                            (   '''
-                                insert  into    httpcache
-                                        (       tag,
-                                                url,
-                                                page,
-                                                hits,
-                                                scraperid,
-                                                runid
-                                        )
-                                values  ( %s, %s, %s, %s, %s, %s )
-                                ''',
-                                [   ctag, self.path, page, 1, scraperID, runID    ]
-                            )
-                        def iid (cursor) :
-                            try    : return cursor.lastrowid
-                            except : pass
-                            try    : return cursor.insert_id()
-                            except : pass
-                            return None
-                        cacheid = iid(cursor)
+
+                    fetched = self.getResponse(soc)
+
+                    if cache_client:
+                        if self.fetchedDiffers (fetched, cached) :
+                            cache_client.set(ctag, fetched)
+
             finally :
                 if soc is not None :
                     soc.close()
-        finally :
-            rem     = self.connection.getpeername()
-            try    : offset1 = string.index (page, '\r\n\r\n')
-            except : offset1 = 0x3fffffff
-            try    : offset2 = string.index (page, '\n\n'    )
-            except : offset2 = 0x3fffffff
-            if offset1 < offset2 :
-                   bytes = len(page) - offset1 - 4
-            else : bytes = len(page) - offset2 - 2
-            if bytes < 0 :
-                bytes = len(page)
-            
-            failedmessage = ''
-            m = re.match ('^HTTP/1\\..\\s+([0-9]+)\\s+(.*?)[\r\n]', page)
-            if m :
-                if m.group(1) != '200' :
-                    failedmessage = 'Failed:' + m.group(1) + "  " + m.group(2)
-            else :
-                failedmessage = 'Failed: (code missing)'
-            
-            self.notify (self.connection.getpeername()[0], runid = runID, url = self.path, failedmessage = failedmessage, bytes = bytes, cacheid = cacheid, cached = (used == 'CACHED'))
 
-            self.connection.sendall (page)
-            self.connection.close()
+        if fetched: 
+            cacheid, page = ctag, fetched
+        elif cached:
+            cacheid, page = ctag, cached
+        else:
+            cacheid, page = '', ''
+
+        if cacheid is None:
+            cacheid = ''
+
+        bodyat  = self.bodyOffset (page)
+        headers = page[:bodyat]
+        bytes   = len(page) - bodyat
+        if bytes < 0 :
+            bytes = len(page)
+
+        mimetype = ''
+        for line in headers.split('\n') :
+            if line.find(':') > 0 :
+                name, value = line.split(':', 1)
+                if name.lower() == 'content-type' :
+                    if value.find(';') > 0 :
+                        value, rest = value.split(';',1)
+                        mimetype = value.strip()
+
+        failedmessage = ''
+        m = re.match ('^HTTP/1\\..\\s+([0-9]+)\\s+(.*?)[\r\n]', page)
+        if m :
+            if m.group(1) != '200' :
+                failedmessage = 'Failed:' + m.group(1) + "  " + m.group(2)
+        else :
+            failedmessage = 'Failed: (code missing)'
+
+        self.notify \
+            (   self.connection.getpeername()[0],
+                runid           = runID,
+                scraperid       = scraperID,
+                url             = self.path,
+                failedmessage   = failedmessage,
+                bytes           = bytes,
+                mimetype        = mimetype,
+                cacheid         = cacheid,
+                last_cacheid    = cached is not None or '',
+                cached          = cached is not None,
+                ddiffers        = ddiffers
+            )
+
+        self.connection.sendall (page)
+        self.connection.close()
 
         if runID is not None :
             statusLock.acquire ()
@@ -482,7 +519,6 @@ class HTTPProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
             except : pass
             statusLock.release ()
 
-        self.swlog().log (scraperID, runID, 'P.DONE', arg1 = self.path, arg2 = used)
 
     def getResponse (self, soc, idle = 0x7ffffff) :
 
@@ -526,9 +562,7 @@ class HTTPProxyHandler (BaseHTTPServer.BaseHTTPRequestHandler) :
 
     def do_GET (self) :
 
-        print "XXXGET ...."
         self.retrieve ("GET" )
-        print "XXXDONE GET ...."
 
     def do_POST (self) :
 
@@ -549,7 +583,7 @@ class HTTPProxyServer \
         (   SocketServer.ThreadingMixIn,
             BaseHTTPServer.HTTPServer
         ) :
-
+    pass
 
 
 class HTTPSProxyServer (HTTPProxyServer) :
@@ -600,7 +634,7 @@ if __name__ == '__main__' :
     subproc = False
     daemon  = False
     confnam = 'uml.cfg'
-
+    
     for arg in sys.argv[1:] :
 
         if arg in ('-h', '--help')  :
@@ -706,5 +740,9 @@ if __name__ == '__main__' :
 
     config = ConfigParser.ConfigParser()
     config.readfp (open(confnam))
+
+    cache_hosts = config.get(varName, 'cache')
+    if cache_hosts:
+        cache_client = memcache.Client( cache_hosts.split(',') )
 
     execute ()
