@@ -1,17 +1,13 @@
 from django.template import RequestContext, TemplateDoesNotExist
 from django.shortcuts import render_to_response
-from django.http import Http404
+from django.http import Http404, HttpResponse, HttpResponseNotFound
 from codewiki.models import Code
 import os
 import re
 import codewiki
 import settings
+import urllib2
 
-def titleize(title):
-    """ Turns 'some_slug' into 'Some Slug' """
-    if title:
-        return ' '.join( [ x.capitalize() for x in title.split('_') ])
-    return ''
 
 def docmain(request, language=None, path=None):
 #    language = request.GET.get('language', None) or request.session.get('language', 'python')
@@ -20,12 +16,13 @@ def docmain(request, language=None, path=None):
     request.session['language'] = language
     context = {'language':language }
     
-    context["title"] = titleize(path)
     if path:
+        context["title"] = ' '.join( [ x.capitalize() for x in path.split('_') ])
         context["docpage"] = 'documentation/includes/%s.html' % re.sub("\.\.", "", path)  # remove attempts to climb into another directory
         if not os.path.exists(os.path.join(settings.SCRAPERWIKI_DIR, "templates", context["docpage"])):
             raise Http404
     return render_to_response('documentation/docbase.html', context, context_instance=RequestContext(request))
+
 
 
     # should also filter, say, on isstartup=True and on privacy_status=visible to limit what can be injected into here
@@ -43,8 +40,21 @@ def contrib(request, short_name):
     context["scraper"] = scraper
     return render_to_response('documentation/docbase.html', context, context_instance=RequestContext(request))
 
+
 def docexternal(request):
-    return render_to_response('documentation/apibase.html', { }, context_instance=RequestContext(request))
+    api_base = "http://%s/api/1.0/" % settings.API_DOMAIN
+    return render_to_response('documentation/apibase.html', {"api_base":api_base}, context_instance=RequestContext(request))
+
+
+def api_explorer(request):
+    styout = '<pre style="background:#000; color:#fff;">%s</pre>'  # can't be done by formatting the iframe
+    if not request.POST:
+        return HttpResponse(styout % "Select a function, add values above, then click 'call method'\nto see live data")
+    url = request.POST.get("apiurl")
+    api_base = "http://%s/api/1.0/" % settings.API_DOMAIN
+    assert url[:len(api_base)] == api_base
+    result = urllib2.urlopen(url).read()
+    return HttpResponse(styout % result)
 
 
 
