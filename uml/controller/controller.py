@@ -336,7 +336,7 @@ class ScraperController(BaseController):
                  'elapsed_seconds' : int(ostimes2[4] - ostimes1[4]), 'CPU_seconds':int(ostimes2[0] - ostimes1[0]) }
 
  
-    def processrunscript(self, streamprintsout, streamjsonsout, request, tmpscriptfile):
+    def processrunscript(self, streamprintsout, streamjsonsout, request, tmpscriptfile, scrapername, runid):
         fout = open(tmpscriptfile, 'w')
         fout.write(request['code'].encode('utf-8'))
         fout.close()
@@ -350,7 +350,7 @@ class ScraperController(BaseController):
         execscript = os.path.join(os.path.dirname(sys.argv[0]), lexec)
         args = [    execscript,
                     '--ds=%s:%s' % (config.get('dataproxy', 'host'), config.get('dataproxy', 'port')),
-                    '--script=%s' % tmpscriptfile,
+                    '--script=%s' % tmpscriptfile, '--scrapername=%s' % scrapername, '--runid=%s' % runid
                ]
 
         if poptions.setuid:
@@ -411,7 +411,7 @@ class ScraperController(BaseController):
             streamprintsin.close()
             streamjsonsin.close()
             tmpscriptfile = '/tmp/scraper.%d' % os.getpid() 
-            self.processrunscript(streamprintsout.fileno(), streamjsonsout.fileno(), request, tmpscriptfile)  
+            self.processrunscript(streamprintsout.fileno(), streamjsonsout.fileno(), request, tmpscriptfile, scrapername, self.m_runID)  
                 # eventually calls execvp("php exec.php") and never returns
         
         else:
