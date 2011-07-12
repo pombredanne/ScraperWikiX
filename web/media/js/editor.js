@@ -25,27 +25,21 @@ $(document).ready(function() {
     if (window.location.hash == "#plain")
         texteditor = "plain"; 
     
-    var lastRev         = $('#originalrev').val(); 
-    var lastRevDateEpoch= ($('#originalrevdateepoch').val() ? parseInt($('#originalrevdateepoch').val()) : 0); 
+    var lastRev = $('#originalrev').val(); 
+    var lastRevDateEpoch = ($('#originalrevdateepoch').val() ? parseInt($('#originalrevdateepoch').val()) : 0); 
     var lastRevUserName = $('#originalrevusername').val(); 
     var lastRevUserRealName = $('#originalrevuserrealname').val(); 
     var rollbackRev = $('#rollback_rev').val(); 
-    if (rollbackRev == "") {
-        rollbackRev = null; 
-    } else {
-        rollbackRev = parseInt(rollbackRev);
-    }
 
-    var lastRevPrefix   = "Last edited";
-    if (rollbackRev != null) {
-        lastRevPrefix   = "Rollback preview of ";
-    }
+    var lastRevPrefix = "Last edited";
+    if (rollbackRev != "") 
+        lastRevPrefix = "Rollback preview of ";
 
     var lastupdaterevcall = null; 
-    function doUpdateLastSavedRev() 
+    function writeUpdateLastSavedRev() 
     {
         lastupdaterevcall = null; 
-        if ((lastRev != null) && (lastRev != "unsaved"))
+        if ((lastRev != "") && (lastRev != "unsaved"))
         {
             var twhen = new Date(lastRevDateEpoch * 1000);
             var tago = jQuery.timeago(twhen);
@@ -53,7 +47,7 @@ $(document).ready(function() {
                     'By ' + lastRevUserRealName + ' (' + lastRevUserName + '), ' +
                     ' rev ' + String(lastRev) + ' \n' + 
                     'on ' + String(twhen) + '">' + lastRevPrefix + ' ' + tago + '</span>');
-            lastupdaterevcall = setTimeout(doUpdateLastSavedRev, 500);
+            lastupdaterevcall = setTimeout(writeUpdateLastSavedRev, 60000);
         }
     }
     function updateLastSavedRev(rev, revdateepoch)
@@ -62,14 +56,18 @@ $(document).ready(function() {
         lastRevDateEpoch = revdateepoch;
         lastRevUserName = username;
         lastRevUserRealName = userrealname;
+        chainpatchnumber = 0; 
+        nextchainpatchnumbertoreceive = 0; 
+        lastreceivedchainpatch = null; 
+        chainpatches = []; // can't find the array.clear() function
         lastRevPrefix = "Saved";
         if (lastupdaterevcall != null)
             clearTimeout(lastupdaterevcall); 
-        lastupdaterevcall = setTimeout(doUpdateLastSavedRev, 50); 
-        rollbackRev = null;
+        lastupdaterevcall = setTimeout(writeUpdateLastSavedRev, 50); 
+        rollbackRev = "";
         $('#rollback_warning').hide();
     }
-    lastupdaterevcall = setTimeout(doUpdateLastSavedRev, 50); 
+    lastupdaterevcall = setTimeout(writeUpdateLastSavedRev, 50); 
 
     var lastsavedcode   = ''; // used to tell if we should expect a null back from the revision log
 
@@ -116,9 +114,11 @@ $(document).ready(function() {
 
     var cachehidlookup = { }; // this itself is a cache of a cache
     
-    var chainpatches = [ ]; 
-    var chainpatchnumber = 0; // counts them going out
     var lasttypetime = new Date(); 
+    var chainpatches = [ ];   // stack going out
+    var chainpatchnumber = 0; // counts them going out 
+    var nextchainpatchnumbertoreceive = 0; 
+    var lastreceivedchainpatch = null;
 
     setupCodeEditor(); 
     setupMenu();
@@ -126,7 +126,7 @@ $(document).ready(function() {
     setupToolbar();
     setupResizeEvents();
     setupOrbited();
-
+    
     function CM_cleanText(text)  { return text.replace(/\u00a0/g, " ").replace(/\u200b/g, ""); }
     function CM_isBR(node)  { var nn = node.nodeName; return nn == "BR" || nn == "br"; }
     function CM_nodeText(node)  { return node.textContent || node.innerText || node.nodeValue || ""; }
@@ -169,8 +169,11 @@ $(document).ready(function() {
     function sendChainPatches()
     {
         if (chainpatches.length > 0)
-            sendjson(chainpatches.shift()); 
-
+        {
+            var chainpatch = chainpatches.shift(); 
+            //writeToChat("-- "+$.toJSON(chainpatch)); 
+            sendjson(chainpatch); 
+        }
         // clear out the ones that are pure typing messages sent in non-broadcast mode
         while ((chainpatches.length > 0) && (chainpatches[0].insertlinenumber == undefined))
             chainpatches.shift(); 
@@ -187,7 +190,7 @@ $(document).ready(function() {
         if (codemirroriframe)
         {
             var historysize = codeeditor.historySize(); 
-            var automode = $('select#automode option:selected').val(); 
+            var automode = $('input#automode').val(); 
     
             if (changetype == "saved")
                 savedundo = atsavedundo
@@ -201,56 +204,45 @@ $(document).ready(function() {
             var lpageIsDirty = (historysize.undo + historysize.lostundo != savedundo); 
         }
         else
-        {
             lpageIsDirty = (changetype == "edit"); 
-            $('select#automode #id_autotype').attr('disabled', true); 
-        }
 
         if (pageIsDirty != lpageIsDirty)
         {
             pageIsDirty = lpageIsDirty; 
             $('#aCloseEditor1').css("font-style", ((pageIsDirty && guid) ? "italic" : "normal")); 
-
-        // we can only enter broadcast mode from a clean file
-        // in the future we could maintain a stack of patches here and upload them when the broadcast mode is entered
-        // so that they apply retrospectively.  
-        // also we can do the saving through twister and bank a stack of patches there
-        // that will be applied when someone else opens a window
-            if (pageIsDirty && (automode != 'autotype'))
-                $('select#automode #id_autotype').attr('disabled', true); 
-            else if (!pageIsDirty && !$('select#automode #id_autosave').attr('disabled') && codemirroriframe)
-                $('select#automode #id_autotype').attr('disabled', false); 
         }
 
         if (changetype != 'edit')
             return; 
-
-        // to do: arrange for there to be only one autotype/broadcast window for a user
-        // if the set it for one clients, then any other client that is in this mode gets 
-        // reverted back to editing.  So it's clear which window is actually active and sending signals
-
-        // also may want a facility for a watching user to be able to select an area in his window
-        // and make it appear selected for the broadcast user
-        if ((automode == 'autotype') && codemirroriframe)
+        if (automode != 'autosave')
+            return; 
+        
+        
+        
+        // make outgoing patches
+        if (codemirroriframe)
         {
-            //assert codeeditor;
-
             // send any edits up the line (first to the chat page to show we can decode it)
             var historystack = codeeditor.editor.history.history; 
             var redohistorystack = codeeditor.editor.history.redoHistory; 
             var lostundo = codeeditor.editor.history.lostundo; 
             var rdhL = redohistorystack.length - 1; 
+            var ptime = (new Date()).getTime(); 
             while (lastundo != historystack.length + lostundo)
             {
                 var chains; 
+                var historypos; 
                 if (lastundo < historystack.length + lostundo)
                 {
                     chains = historystack[lastundo - lostundo]; 
+                    historypos = lastundo - lostundo; 
                     lastundo++; 
                 }
                 else if (rdhL >= 0)
                 {
-                    chains = redohistorystack[rdhL--]; 
+                    chains = redohistorystack[rdhL]; 
+                    historypos = -1 - rdhL; 
+                    rdhL--; 
                     lastundo--; 
                 }
                 else
@@ -260,14 +252,23 @@ $(document).ready(function() {
                 for (var i = 0; i < chains.length; i++)
                 {
                     var chain = chains[i]; 
-                    var chainpatch = { command:'typing', insertlinenumber:CM_lineNumber(chain[0].from), deletions:[ ], insertions:[ ], "chainpatchnumber":(chainpatchnumber++), "rev":lastRev }
+                    var deletions = [ ]; 
+                    var insertions = [ ]; 
+                    var insertlinenumber = CM_lineNumber(chain[0].from);
                     for (var k = 0; k < chain.length; k++)
-                        chainpatch["deletions"].push(chain[k].text); 
+                        deletions.push(chain[k].text);  // these values I think can be changed retrospectively to collapse an undo value
     
                     var lines = CM_newLines(chain[0].from, chain[chain.length - 1].to); 
                     for (var j = 0; j < lines.length; j++)
-                        chainpatch["insertions"].push(lines[j]); 
+                        insertions.push(lines[j]); 
+                    
+                    // duplicates that can happen with the final line (deletions[-1]==insertions[-1]) which we could trim out, but best to leave in 
+                    // in case it does overwrite the last change that was sent on that line but mismatched by unreliability of CM_newLines
+
+                    var chainpatch = { command:'typing', insertlinenumber:insertlinenumber, deletions:deletions, insertions:insertions, chainpatchnumber:chainpatchnumber, 
+                                       rev:lastRev, clientnumber:clientnumber, historypos:historypos, ptime:ptime, chatname:chatname }
                     lchainpatches.push(chainpatch); 
+                    chainpatchnumber++; 
                 }
 
                 // arrange for the chainpatches list (which is reversed) to add the upper ones first, because the line numbering 
@@ -277,9 +278,10 @@ $(document).ready(function() {
                     chainpatches.push(lchainpatches.pop()); 
             }
         }
-
-        else if ((automode == 'autosave') && bConnected)
-            chainpatches.push({"command":'typing'}); 
+        
+        // plain text area case not coded for
+        else 
+            chainpatches.push({"command":'typing', "chainpatchnumber":(chainpatchnumber++), "rev":lastRev, "clientnumber":clientnumber}); 
 
         if (chainpatches.length > 0)
             sendChainPatches(); 
@@ -547,9 +549,6 @@ $(document).ready(function() {
         });
         $('#id_urlquery').blur();
 
-        $('select#automode').change(changeAutomode); 
-        $('input#showautomode').change(showhideAutomodeSelector); 
-
         if (!savecode_authorized) 
             $(username ? '#protected_warning' : '#login_warning').show();
     }
@@ -602,6 +601,7 @@ $(document).ready(function() {
                  "userrealname":userrealname, 
                  "language":scraperlanguage, 
                  "scrapername":short_name, 
+                 "originalrev":lastRev, 
                  "isstaff":isstaff };
         sendjson(data);
     }
@@ -629,7 +629,7 @@ $(document).ready(function() {
         bConnected = false; 
 
         // couldn't find a way to make a reconnect button work!
-            // the bSuppressDisconnectionMessages technique doesn't seem to work (unload is not invoked), so delay message  in the hope that window will close first
+            // the bSuppressDisconnectionMessages technique doesn't seem to work (unload is not invoked), so delay message in the hope that window will close first
         window.setTimeout(function() 
         {
             if (!bSuppressDisconnectionMessages)
@@ -702,12 +702,14 @@ $(document).ready(function() {
     function clearJunkFromQueue() 
     {
         var lreceiverecordqueue = [ ]; 
-        for (var i = 0; i < receiverecordqueue.length; i++) {
+        for (var i = 0; i < receiverecordqueue.length; i++) 
+        {
             jdata = receiverecordqueue[i]; 
             if ((jdata.message_type != "data") && (jdata.message_type != "console") && (jdata.message_type != "sqlitecall"))
                 lreceiverecordqueue.push(jdata); 
         }
-        if (receiverecordqueue.length != lreceiverecordqueue.length) {
+        if (receiverecordqueue.length != lreceiverecordqueue.length) 
+        {
             message = "Clearing " + (receiverecordqueue.length - lreceiverecordqueue.length) + " records from receiverqueue, leaving: " + lreceiverecordqueue.length; 
             writeToConsole(message); 
             receiverecordqueue = lreceiverecordqueue; 
@@ -858,7 +860,7 @@ writeToChat("<b>requestededitcontrol: "+data.username+ " has requested edit cont
             "scrapername":short_name,
             "code"      : code,
             "urlquery"  : urlquery,
-            "automode"  : $('select#automode option:selected').val()
+            "automode"  : $('input#automode').val()
         }
 
         $('.editor_controls #run').val('Sending');
@@ -875,8 +877,8 @@ writeToChat("<b>requestededitcontrol: "+data.username+ " has requested edit cont
     function autosavefunction(code, stimulate_run)
     {
         // do a save to the system every time we run (this would better be done via twisted at some point)
-        var automode = $('select#automode option:selected').val(); 
-        if ((automode == 'autosave') || (automode == 'autotype'))
+        var automode = $('input#automode').val(); 
+        if (automode == 'autosave')
         {
             if (pageIsDirty)
                 saveScraper(stimulate_run); 
@@ -894,33 +896,17 @@ writeToChat("<b>requestededitcontrol: "+data.username+ " has requested edit cont
     } 
 
 
-    function changeAutomode() 
+    function changeAutomode(newautomode) 
     {
-        lasttypetime = new Date(); 
-        var automode = $('select#automode option:selected').val(); 
-        if (automode == 'draft')
-        {
-            $('#watcherstatus').text("draft mode"); // consider also hiding select#automode
-            setCodeMirrorReadOnly(false);
+        $('input#automode').val(newautomode);
 
-        // You can never go back from draft mode. (what if someone else (including you) had edited?)
-        // often you will do this in a duplicate window that you take into draft mode and then discard,
-        // though the UI for making these duplicate windows is a pain as you have to fully close the editor, and then open two editors from the overview page
-        // because you can't clone from the close window button as it's activated to disconnect the connection to the editor
-        // Draft windows will be able to pop up a diff with the current saved version, so using this as a patch could readily provide a route back through a reload
-            $('select#automode #id_autosave').attr('disabled', true); 
-            $('select#automode #id_autoload').attr('disabled', true); 
-            $('.editor_controls #watch_button_area').hide();
-            $('select#automode #id_autotype').attr('disabled', true); 
-            $('.editor_controls #btnCommitPopup').attr('disabled', true); 
-            $('.editor_controls #run').attr('disabled', false);
-            $('.editor_controls #preview').attr('disabled', false);
-        }
-                // self demote from editing to watching
+        lasttypetime = new Date(); 
+        var automode = $('input#automode').val(); 
+        if (automode == 'draft')
+            ;
+        // self demote from editing to watching
         else if (automode == 'autoload')
         {
-            $('select#automode #id_autosave').attr('disabled', true); 
-            $('select#automode #id_autotype').attr('disabled', true); 
             $('.editor_controls #watch_button_area').hide();
             setCodeMirrorReadOnly(true);
             $('.editor_controls #btnCommitPopup').attr('disabled', true); 
@@ -935,32 +921,6 @@ writeToChat("<b>requestededitcontrol: "+data.username+ " has requested edit cont
         sendjson(data); 
     }; 
 
-    function showhideAutomodeSelector()
-    {
-        // always show it for debugging
-        // $('select#automode').show(); return; 
-        
-        // never show it, other buttons do functions more clearly now
-        $('select#automode').hide();
-        return
-
-        /*
-        // show it for staff only
-        if (isstaff) {
-            $('select#automode').show().addClass("staff");
-        } else {
-            $('select#automode').hide().removeClass("staff"); 
-        }
-        return; 
-        */
-
-        /* Conditional version, based on whether just single user and needed or not
-        var automode = $('select#automode option:selected').val(); 
-        if ($('input#showautomode').attr('checked') || (automode == 'autotype') || (username ? (loggedineditors.length >= 2) : (loggedineditors.length >= 1)))
-            $('select#automode').show(); 
-        else
-            $('select#automode').hide();  */
-    }
 
     function parseISOdate(sdatetime) // used to try and parse an ISOdate, but it's highly irregular and IE can't do it
         {  return new Date(parseInt(sdatetime)); }
@@ -1036,20 +996,16 @@ writeToChat("<b>requestededitcontrol: "+data.username+ " has requested edit cont
             stext.push("."); 
             writeToChat(cgiescape(stext.join(""))); 
         }
-        showhideAutomodeSelector(); 
 
-        var automode = $('select#automode option:selected').val(); 
+        var automode = $('input#automode').val(); 
 
-        // draft editing do not disturb
+        // draft editing nothing to do
         if (automode == 'draft') 
-        {
-            ;
-        }
+            return;
 
         // you are the editing user
-        else if (username && (editingusername == username))
+        if (username && (editingusername == username))
         {
-            $('select#automode #id_autoload').attr('disabled', (loggedineditors.length == 1)); // no point in being a watcher if no one else is available to edit
             $('.editor_controls #watch_button_area').toggle((loggedineditors.length != 1));
 
             if (loggedineditors.length >= 2)
@@ -1057,42 +1013,15 @@ writeToChat("<b>requestededitcontrol: "+data.username+ " has requested edit cont
             else
                 $('#watcherstatus').html(""); 
 
-            if (data.broadcastingeditor == username)   
-            {
-               // convert all the autosaving pages to watching (apart from the one that the user changed to autotype)
-                if (automode == 'autosave')
-                {
-                    $('select#automode #id_autoload').attr('disabled', false); 
-                    $('.editor_controls #watch_button_area').hide();
-                    $('select#automode').val('autoload'); // watching
-                    $('select#automode #id_autosave').attr('disabled', false); 
-                    $('select#automode #id_autotype').attr('disabled', true); 
-                    setCodeMirrorReadOnly(true);
-                    $('.editor_controls #btnCommitPopup').attr('disabled', true); 
-                    $('.editor_controls #run').attr('disabled', true);
-                    $('.editor_controls #preview').attr('disabled', true);
-                    sendjson({"command":'automode', "automode":'autoload-nodemote'}); 
-                }
-            }
-            else if (((automode != 'autosave') && (automode != 'autotype')) || (data.broadcastingeditor == undefined))
+            if (automode == 'autoload')
             {
                 setCodeMirrorReadOnly(false);
-                $('select#automode #id_autosave').attr('disabled', false); 
-                $('select#automode #id_autotype').attr('disabled', pageIsDirty); 
-                var newmode = 'autosave'; 
-
-                /* This forces broadcast mode (see all edits realtime rather than at save time).
-                 * Bit buggy, so disabled for now
-                   if (!pageIsDirty) {
-                    newmode = 'autotype'; // editing (broadcast)
-                }*/
-//newmode = 'autotype'; 
-
-                $('select#automode').val(newmode); 
+                changeAutomode('autosave'); 
                 $('.editor_controls #run').attr('disabled', false);
                 $('.editor_controls #preview').attr('disabled', false);
                 $('.editor_controls #btnCommitPopup').attr('disabled', false); 
-                if (rollbackRev != null) {
+                if (rollbackRev != "") 
+                {
                     $('.editor_controls #btnCommitPopup').val('Rollback'); 
                     $('#rollback_warning').show();
                 }
@@ -1110,11 +1039,8 @@ writeToChat("<b>requestededitcontrol: "+data.username+ " has requested edit cont
 
             if (automode != 'autoload')
             {
-                $('select#automode #id_autoload').attr('disabled', false); 
                 $('.editor_controls #watch_button_area').hide();
-                $('select#automode').val('autoload'); // watching
-                $('select#automode #id_autosave').attr('disabled', true); 
-                $('select#automode #id_autotype').attr('disabled', true); 
+                changeAutomode('autoload'); // watching
                 setCodeMirrorReadOnly(true);
                 $('.editor_controls #btnCommitPopup').attr('disabled', true); 
                 $('.editor_controls #run').attr('disabled', true);
@@ -1127,31 +1053,40 @@ writeToChat("<b>requestededitcontrol: "+data.username+ " has requested edit cont
         else
         {
             $('#watcherstatus').text(""); 
-            if (automode != 'draft')
+            changeAutomode('autosave'); // editing
+            $('.editor_controls #watch_button_area').hide();
+            if (!savecode_authorized) 
             {
-                $('select#automode #id_autosave').attr('disabled', false); 
-                $('select#automode #id_autotype').attr('disabled', true); 
-                $('select#automode').val('autosave'); // editing
-                $('select#automode #id_autoload').attr('disabled', true); 
-                $('.editor_controls #watch_button_area').hide();
-                if (!savecode_authorized) {
-                    // special case, if not authorized then we are internally
-                    // to this javascript an anonymous user, and want to be readonly
-                    setCodeMirrorReadOnly(true);
-                    $('.editor_controls #run').attr('disabled', true);
-                } else {
-                    setCodeMirrorReadOnly(false);
-                    $('.editor_controls #run').attr('disabled', false);
-                }
-                $('.editor_controls #btnCommitPopup').attr('disabled', false); 
-                $('.editor_controls #preview').attr('disabled', false);
-                sendjson({"command":'automode', "automode":'autosave'}); 
+                // special case, if not authorized then we are internally
+                // to this javascript an anonymous user, and want to be readonly
+                setCodeMirrorReadOnly(true);
+                $('.editor_controls #run').attr('disabled', true);
+            } 
+            else 
+            {
+                setCodeMirrorReadOnly(false);
+                $('.editor_controls #run').attr('disabled', false);
             }
+            $('.editor_controls #btnCommitPopup').attr('disabled', false); 
+            $('.editor_controls #preview').attr('disabled', false);
+            sendjson({"command":'automode', "automode":'autosave'}); 
         }
     }
 
+    // incoming patches
     function recordOtherTyping(chainpatch)
     {
+        if (nextchainpatchnumbertoreceive == -1)
+            return; 
+        if ((chainpatch.chainpatchnumber != nextchainpatchnumbertoreceive) || (chainpatch.rev != lastRev))
+        {
+                // this will be handled some other time (for someone joining in as we are already in full flow)
+            writeToChat('<i>'+chainpatch.chatname+' typed something but this window is not synchronized to receive it</i>'); 
+            nextchainpatchnumbertoreceive = -1; 
+            return; 
+        }
+
+        var mismatchlines = [ ]; 
         var linehandle = codeeditor.nthLine(chainpatch["insertlinenumber"]); 
 
         // change within a single line
@@ -1161,12 +1096,7 @@ writeToChat("<b>requestededitcontrol: "+data.username+ " has requested edit cont
             var deletestr = chainpatch["deletions"][0]; 
             var insertstr = chainpatch["insertions"][0]; 
             if (linecontent != deletestr)
-            {
-                writeToChat("Lines disagree " + $.toJSON(chainpatch)); 
-                writeToChat(linecontent); 
-                writeToChat(deletestr); 
-                return; 
-            }
+                mismatchlines.push({linenumber:chainpatch["insertlinenumber"], linecontent:linecontent, deletestr:deletestr}); 
 
             codeeditor.setLineContent(linehandle, insertstr); 
             var ifront = 0; 
@@ -1189,27 +1119,15 @@ writeToChat("<b>requestededitcontrol: "+data.username+ " has requested edit cont
         {
             var insertions = chainpatch["insertions"]; 
             var deletions = chainpatch["deletions"]; 
-            if (true) // check line content
-            {
-                var dlinehandle = linehandle; 
-                for (var i = 0; i < deletions.length; i++)
-                {
-                    if (codeeditor.lineContent(dlinehandle) != deletions[i])
-                    {
-                        writeToChat("Lines " + i + " disagree " + $.toJSON(chainpatch)); 
-                        writeToChat(codeeditor.lineContent(dlinehandle)); 
-                        writeToChat(deletions[i]); 
-                        return; 
-                    }
-                    dlinehandle = codeeditor.nextLine(dlinehandle); 
-                }
-            }
 
             // apply the patch
             var nlinehandle = linehandle; 
             var il = 0; 
             while ((il < deletions.length - 1) && (il < insertions.length))
             {
+                var linecontent = codeeditor.lineContent(nlinehandle); 
+                if (linecontent != deletions[il])
+                    mismatchlines.push({linenumber:chainpatch["insertlinenumber"]+il, linecontent:linecontent, deletestr:deletions[il]}); 
                 codeeditor.setLineContent(nlinehandle, insertions[il]); 
                 nlinehandle = codeeditor.nextLine(nlinehandle); 
                 il++; 
@@ -1218,32 +1136,73 @@ writeToChat("<b>requestededitcontrol: "+data.username+ " has requested edit cont
             {
                 while (il < deletions.length)
                 {
+                    var linecontent = codeeditor.lineContent(nlinehandle); 
+                    if (linecontent != deletions[il])
+                        mismatchlines.push({linenumber:chainpatch["insertlinenumber"]+il, linecontent:linecontent, deletestr:deletions[il]}); 
                     codeeditor.removeLine(nlinehandle); 
                     il++; 
                 }
                 nlinehandle = codeeditor.prevLine(nlinehandle); 
             }
             else
+            {
+                var linecontent = codeeditor.lineContent(nlinehandle); 
+                if (linecontent != deletions[il])
+                    mismatchlines.push({linenumber:chainpatch["insertlinenumber"]+il, linecontent:linecontent, deletestr:deletions[il]}); 
                 codeeditor.setLineContent(nlinehandle, insertions.slice(il).join("\n"));  // all remaining lines replace the last line
-
+                while (il++ < insertions.length - 1)
+                    nlinehandle = codeeditor.nextLine(nlinehandle); 
+            }
+            
             // find the selection range
             var ifront = 0; 
-            while ((ifront < insertions[0].length) && (ifront < deletions[0].length) && (insertions[0].charAt(ifront) == deletions[0].charAt(ifront)))
-                ifront++; 
-            var finsertstr = insertions[insertions.length-1]; 
-            var fdeletestr = deletions[deletions.length-1]; 
-            var iback = finsertstr.length - 1; 
-            while ((iback >= 0) && (iback - finsertstr.length + fdeletestr.length > 0) && (fdeletestr.charAt(iback - finsertstr.length + fdeletestr.length) == finsertstr.charAt(iback)))
-                iback--; 
-            if ((insertions.length == 0) && (iback < ifront))
-                iback = ifront; 
-            if (iback == finsertstr.length - 1)
+            var iback; 
+            if (insertions.length != 0)
+            {
+                while ((ifront < insertions[0].length) && (ifront < deletions[0].length) && (insertions[0].charAt(ifront) == deletions[0].charAt(ifront)))
+                    ifront++; 
+                
+                // sometimes the last line is duplicated, so knock it out
+                var finsertstr = insertions[insertions.length-1]; 
+                var fdeletestr = deletions[deletions.length-1]; 
+                if ((finsertstr == fdeletestr) && (insertions.length >= 2) && (deletions.length >= 2))
+                {
+                    nlinehandle = codeeditor.prevLine(nlinehandle); 
+                    finsertstr = insertions[insertions.length-2]; 
+                    fdeletestr = deletions[deletions.length-2]; 
+                }
+                
+                iback = finsertstr.length - 1; 
+                while ((iback > 0) && (iback - finsertstr.length + fdeletestr.length > 0) && (fdeletestr.charAt(iback - finsertstr.length + fdeletestr.length) == finsertstr.charAt(iback)))
+                    iback--; 
+                if (iback >= finsertstr.length - 1)
+                {
+                    nlinehandle = codeeditor.nextLine(nlinehandle); 
+                    iback = 0; 
+                }
+            }
+            else 
             {
                 nlinehandle = codeeditor.nextLine(nlinehandle); 
                 iback = 0; 
             }
+            
             codeeditor.selectLines(linehandle, ifront, nlinehandle, iback); 
         }
+
+        // log the mismatch cases, which look like they are coming from the unreliability of 
+        // CM_newLines where the lines are changed prior to the next undo stack commit
+        // therefore the set of patches are actually inconsistent, usually between immediate successor patches, 
+        // so we have the previous patch and the ptime difference to verify this
+        if (mismatchlines.length != 0)
+        {
+            writeToChat("Mismatches "+$.toJSON(mismatchlines)); 
+            writeToChat("chainpatch " + $.toJSON(chainpatch)); 
+            if (lastreceivedchainpatch)
+                writeToChat("prevchainpatch " + $.toJSON(lastreceivedchainpatch)); 
+        }
+        nextchainpatchnumbertoreceive++;  // next value expected
+        lastreceivedchainpatch = chainpatch; 
     }
 
     function startingrun(lrunID, luml, lchatname) 
@@ -1342,8 +1301,6 @@ writeToChat("<b>requestededitcontrol: "+data.username+ " has requested edit cont
         else
             $("#id_code").val(reloaddata.code); 
         updateLastSavedRev(reloaddata.rev, reloaddata.revdateepoch);
-        chainpatchnumber = 0; 
-        //codeeditor.focus(); 
         if (reloaddata.selrange)
             makeSelection(reloaddata.selrange); 
         ChangeInEditor("reload"); 
@@ -1395,8 +1352,7 @@ writeToChat("<b>requestededitcontrol: "+data.username+ " has requested edit cont
         // the watch button
         $('.editor_controls #btnWatch').live('click', function()
         {
-            $('select#automode').val('autoload');
-            changeAutomode();
+            changeAutomode('autoload');
             return false;
         });
  
@@ -1584,7 +1540,6 @@ writeToChat("<b>requestededitcontrol: "+data.username+ " has requested edit cont
             if (res.draft != 'True') 
             {
                 window.setTimeout(function() { $('.editor_controls #btnCommitPopup').val('save' + (wiki_type == 'scraper' ? ' scraper' : '')).removeClass('darkness'); }, 1100);  
-                updateLastSavedRev(res.rev, res.revdateepoch);
                 if (res.rev == null)
                 {
                     writeToChat("No difference (null revision number)"); 
@@ -1594,6 +1549,7 @@ writeToChat("<b>requestededitcontrol: "+data.username+ " has requested edit cont
                 }
                 else 
                 {
+                    updateLastSavedRev(res.rev, res.revdateepoch);
                     writeToChat("Saved rev number: " + res.rev); 
                     $('.editor_controls #btnCommitPopup').val('Saved').addClass('darkness'); 
                     if (bConnected)
@@ -2022,8 +1978,8 @@ writeToChat("<b>requestededitcontrol: "+data.username+ " has requested edit cont
             if ((chatpeopletimes[sechatname] == undefined) || ((servernowtime.getTime() - chatpeopletimes[sechatname].getTime())/1000 > 60))
             {
                 chatpeopletimes[sechatname] = servernowtime; 
-                $('.editor_output div.tabs li.chat').addClass('chatalert');
-                //window.setTimeout(function() { $('.editor_output div.tabs li.chat').removeClass('chatalert'); }, 1500); 
+                if (sTabCurrent != 'chat')
+                    $('.editor_output div.tabs li.chat').addClass('chatalert');
             }
         }
     }
@@ -2126,6 +2082,4 @@ writeToChat("<b>requestededitcontrol: "+data.username+ " has requested edit cont
         resizeCodeEditor();
     }
 
-   
-   
 });
