@@ -207,9 +207,11 @@ def code_overview(request, wiki_type, short_name):
                 ckanparams["resources_description"] = "Scraped data"
                 context["ckansubmit"] = "http://ckan.net/package/new?%s" % urllib.urlencode(ckanparams)
 
+    if dataproxy:
+        dataproxy.close()
+
     context["api_base"] = "http://%s/api/1.0/" % settings.API_DOMAIN
     
-    dataproxy.close()
     return render_to_response('codewiki/scraper_overview.html', context, context_instance=RequestContext(request))
 
 
@@ -228,25 +230,56 @@ def scraper_admin_privacystatus(request, short_name):
     return HttpResponse(dict(PRIVACY_STATUSES_UI)[scraper.privacy_status])
 
 def scraper_admin_controleditors(request, short_name):
-    scraper = getscraperor404(request, short_name, "set_controleditors")
-    username = request.GET.get('roleuser', '')
-    lroleuser = User.objects.filter(username=username)
-    if not lroleuser:
+    username  = request.GET.get('roleuser', '')
+    newrole   = request.GET.get('newrole', '')    
+    processed = False
+
+    if not username:
+        return HttpResponse("Failed: username not provided")
+        
+    try:
+        roleuser = User.objects.get(username=username)
+    except User.DoesNotExist:
         return HttpResponse("Failed: username '%s' not found" % username)
-    roleuser = lroleuser[0]
-    newrole = request.GET.get('newrole', '')
-    if newrole not in ['editor', 'follow']:
+    
+    # We allow '' for removing a role
+    if newrole not in ['editor', 'follow', '']:
         return HttpResponse("Failed: role '%s' unrecognized" % newrole)
-    if models.UserCodeRole.objects.filter(code=scraper, user=roleuser, role=newrole):
-        return HttpResponse("Warning: user is already '%s'" % newrole)
-    if models.UserCodeRole.objects.filter(code=scraper, user=roleuser, role='owner'):
-        return HttpResponse("Failed: user is already owner")
-    newuserrole = scraper.set_user_role(roleuser, newrole)
-    context = { "role":newuserrole.role, "contributor":newuserrole.user }
+
+    if newrole == '':
+        # Make sure we are either removing the role from ourselves or have permission
+        # to remove it from another user
+        if request.user.id == roleuser.id:
+            scraper = getscraperor404(request, short_name, "remove_self_editor")
+        else:
+            scraper = getscraperor404(request, short_name, "set_controleditors")
+        
+        # If the user is an owner and is trying to remove their own role then we 
+        # should disregard this request as they cannot remove that role
+        if models.UserCodeRole.objects.filter(code=scraper, user=roleuser, role='owner').count():
+            return HttpResponse("Failed: You cannot remove yourself as owner" )                
+        scraper.set_user_role(roleuser, 'editor', remove=True)
+        context = { "role":'', "contributor":request.user }        
+        processed = True        
+    else:
+        scraper = getscraperor404(request, short_name, "set_controleditors")
+
+    if not processed:    
+        if models.UserCodeRole.objects.filter(code=scraper, user=roleuser, role=newrole):
+            return HttpResponse("Warning: user is already '%s'" % newrole)
+    
+        if models.UserCodeRole.objects.filter(code=scraper, user=roleuser, role='owner'):
+            return HttpResponse("Failed: user is already owner")
+        
+        newuserrole = scraper.set_user_role(roleuser, newrole)
+        context = { "role":newuserrole.role, "contributor":newuserrole.user }
+        processed = True
+        
     context["user_owns_it"] = (request.user in scraper.userrolemap()["owner"])
-    if newuserrole:
+    if processed:
         return render_to_response('codewiki/includes/contributor.html', context, context_instance=RequestContext(request))
     return HttpResponse("Failed: unknown")
+
 
 
 def view_admin(request, short_name):
