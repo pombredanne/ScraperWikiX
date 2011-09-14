@@ -117,6 +117,7 @@
 <div class="content full" id="scraper_about">
     <h2>About this scraper 
         {% if user.is_authenticated %}<a href="#" id="aEditAboutScraper" class="edit">[edit description]</a>{% else %}<a href="{% url login %}?next={% url code_overview 'scraper' scraper.short_name %}" class="edit">[sign in to edit description]</a>{% endif %}
+{%comment%}
         {% if user.is_staff %}
           <span class="staff">
           {% if ckanresource %}
@@ -127,6 +128,7 @@
           {% endif %}
           </span>
         {% endif %}
+{%endcomment%}
     </h2>
     <div class="text_wiki">
         <div id="divAboutScraper">
@@ -192,18 +194,6 @@
     <div id="spnRunInterval">
        {% include 'codewiki/includes/run_interval.html' %}
     </div>
-
-    {% if user.is_staff %}
-    <div class="staff">
-      {% ifequal scraper.wiki_type 'scraper' %}
-        <form action="{% url scraper_run_scraper scraper.short_name %}" method="post">
-          {% csrf_token %}
-          <input type="hidden" name="run_scraper" value="1" />
-          <input type="submit" id="btnRunScraper" class="" value="Run now (as if scheduled)" />
-        </form>
-      {% endifequal %}
-    </div>
-    {% endif %}
 
     {% include 'codewiki/includes/admin_controls.html' %}
 

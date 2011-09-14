@@ -120,16 +120,19 @@ def rpcexecute(request, short_name, revision=None):
             revision = int(revision)
         except ValueError: 
             revision = None
-    code = scraper.saved_code(revision)
     
     # quick case where we have PHP with no PHP code in it (it's all pure HTML)
-    if scraper.language == 'php' and not re.search('<\?', code):
-        return HttpResponse(scraperwikitag(scraper, code, None))
-    if scraper.language == 'html':
-        return HttpResponse(scraperwikitag(scraper, code, None))
-    if scraper.language == 'javascript':
-        return HttpResponse(code, mimetype='application/javascript')
+    if scraper.language in ['html', 'php', 'javascript']:
+        code = scraper.saved_code(revision)
+        if scraper.language == 'php' and not re.search('<\?', code):
+            return HttpResponse(scraperwikitag(scraper, code, None))
+        if scraper.language == 'html':
+            return HttpResponse(scraperwikitag(scraper, code, None))
+        if scraper.language == 'javascript':
+            return HttpResponse(code, mimetype='application/javascript')
 
+    if revision == None:
+        revision = -1
     
     # run it the socket method for staff members who can handle being broken
 #    if request.user.is_staff:
@@ -304,7 +307,7 @@ def Dtwistermakesrunevent(request):
         
         event.scraper.status = request.POST.get("exitstatus") == "exceptionmessage" and "sick" or "ok"
         event.scraper.last_run = datetime.datetime.now()
-        # event.scraper.update_meta() # enable if views ever have metadata that needs updating each refresh
+        event.scraper.update_meta() # enable if views ever have metadata that needs updating each refresh
         event.scraper.save()
 
         domainscrapes = json.loads(request.POST.get("domainscrapes"))

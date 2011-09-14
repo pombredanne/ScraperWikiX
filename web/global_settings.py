@@ -20,7 +20,7 @@ sys.path.append('web')
 
 # Django settings for scraperwiki project.
 
-DEBUG = False
+DEBUG = True
 
 TIME_ZONE = 'Europe/London'
 LANGUAGE_CODE = 'en-uk'
@@ -161,6 +161,11 @@ SCRAPERS_PER_PAGE = 60
 MAX_API_ITEMS = 500
 DEFAULT_API_ITEMS = 100
 
+# Make "view on site" work for user models
+# https://docs.djangoproject.com/en/dev/ref/settings/?#absolute-url-overrides
+ABSOLUTE_URL_OVERRIDES = {
+    'auth.user': lambda o: o.get_profile().get_absolute_url()
+}
 
 # Requited for the template_settings context processor. Each varible listed
 # here will be made availible in all templates that are passed the
@@ -211,6 +216,9 @@ SESSION_COOKIE_SECURE = False
 
 # Enable logging of errors to text file, taken from:
 # http://stackoverflow.com/questions/238081/how-do-you-log-server-errors-on-django-sites
+import logging
+from middleware import exception_logging
+logging.custom_handlers = exception_logging
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': True,
@@ -230,7 +238,7 @@ LOGGING = {
         },
         # Log to a text file that can be rotated by logrotate
         'logfile': {
-            'class': 'logging.handlers.RotatingFileHandler',
+            'class': 'logging.custom_handlers.WorldWriteRotatingFileHandler',
             'filename': '/var/log/scraperwiki/django-www.log',
             'mode': 'a',
             'maxBytes': 100000,

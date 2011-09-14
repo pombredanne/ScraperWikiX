@@ -1,6 +1,6 @@
 #! /bin/sh
 ### BEGIN INIT INFO
-# Provides:          httpproxy
+# Provides:          dataproxy
 # Required-Start:    $local_fs
 # Default-Start:     2
 # Short-Description: Start controller
@@ -11,19 +11,17 @@
 
 # Do NOT "set -e"
 
-NOBODY=`grep nobody /etc/passwd | cut -d: -f3`
-NOGROUP=`grep nogroup /etc/group | cut -d: -f3`
-
 # PATH should only include /usr/* if it runs after the mountnfs.sh script
+WEBSTORE_SETTINGS=/var/www/scraperwiki/services/webstore-settings.py
 PATH=/sbin:/usr/sbin:/bin:/usr/bin
-DESC="WebProxy"
-NAME=webproxy
-CONFIG=/var/www/scraperwiki/uml/uml.cfg
+DESC="Webstore"
+NAME=webstore
 DAEMON=/usr/bin/python
-DAEMON_ARGS="/var/www/scraperwiki/uml/httpproxy/httpproxy.py --daemon --subproc --uid=$NOBODY --gid=$NOGROUP --config=$CONFIG --useCache --mode=P"
-PIDFILE=/var/run/$NAME.pid
-SCRIPTNAME=/etc/init.d/$NAME
-
+VARDIR=/var
+export PYTHONPATH=/var/www/scraperwiki/
+LOGFILE=$VARDIR/log/$NAME.log
+PIDFILE=$VARDIR/run/$NAME.pid
+DAEMON_ARGS="/var/www/scraperwiki/services/webstore/run_store.py  $WEBSTORE_SETTINGS"
 
 # Exit if the package is not installed
 [ -x "$DAEMON" ] || exit 0
@@ -138,7 +136,7 @@ case "$1" in
 	esac
 	;;
   *)
-	echo "Usage: $SCRIPTNAME {start|stop|restart|force-reload}" >&2
+	echo "Usage: /etc/init.d/$NAME {start|stop|restart|force-reload}" >&2
 	exit 3
 	;;
 esac

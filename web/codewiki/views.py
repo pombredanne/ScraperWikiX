@@ -3,10 +3,10 @@ from django.template.loader import render_to_string
 from django.http import HttpResponseRedirect, HttpResponse, Http404, HttpResponseNotFound
 from django.shortcuts import render_to_response
 from django.core.urlresolvers import reverse
-from django.core.management import call_command
 from django.core.exceptions import PermissionDenied, SuspiciousOperation
 from django.contrib.auth.models import User
 from django.views.decorators.http import condition
+from django.shortcuts import get_object_or_404
 import textile
 from django.conf import settings
 
@@ -92,7 +92,7 @@ def scraper_history(request, wiki_type, short_name):
     context = { 'selected_tab': 'history', 'scraper': scraper, "user":request.user }
     
     itemlog = [ ]
-    for commitentry in scraper.get_commit_log():
+    for commitentry in scraper.get_commit_log("code"):
         item = { "type":"commit", "rev":commitentry['rev'], "datetime":commitentry["date"] }
         if "user" in commitentry:
             item["user"] = commitentry["user"]
@@ -124,6 +124,33 @@ def scraper_history(request, wiki_type, short_name):
     context["filestatus"] = scraper.get_file_status()
     
     return render_to_response('codewiki/history.html', context, context_instance=RequestContext(request))
+
+###############################################################################
+# Called as a result of a GIT PUSH when the callback is pointed at a specific 
+# scraper, we will handle the incoming request only if the fields match what
+# the owner told us about the scraper/git connection.
+###############################################################################
+def gitpush(request, wiki_type, short_name):
+    if not request.method == 'POST':
+        return HttpResponse("Error - not a post request")                    
+        
+    try:
+        data = json.loads( request.raw_post_data )
+    except:
+        # We need to notify the user that the push request was not handled
+        return HttpResponse("Error - no JSON found")            
+
+    # TODO: Check the username,repo and filename in the scraper properties 
+    # against the properties set in the scraper. If they match then go 
+    # fetch the updated file and use it.
+    
+    scraper = get_object_or_404( Scraper, short_name=short_name)
+    if scraper.privacy_status == 'deleted':
+        raise Http404
+    
+    # Check the scraper properties.
+        
+    return HttpResponse("OK")
 
 
 def code_overview(request, wiki_type, short_name):
@@ -425,13 +452,6 @@ def scraper_schedule_scraper(request, short_name):
         scraper.scraper.save()
     return HttpResponseRedirect(reverse('code_overview', args=[scraper.wiki_type, short_name]))
 
-def scraper_run_scraper(request, short_name):
-    scraper = getscraperor404(request, short_name, "run_scraper")
-    if scraper.wiki_type == "scraper":
-        scraper.scraper.last_run = None
-        scraper.scraper.save()
-        call_command('run_scrapers', short_name=short_name)
-    return HttpResponseRedirect(reverse('code_overview', args=[scraper.wiki_type, short_name]))
 
 def scraper_delete_scraper(request, wiki_type, short_name):
     scraper = getscraperorresponse(request, wiki_type, short_name, None, "delete_scraper")
@@ -474,14 +494,6 @@ def choose_template(request, wiki_type):
         context["languages"] = models.code.VIEW_LANGUAGES
     
     return render_to_response(template, context, context_instance=RequestContext(request))
-
-
-    
-def delete_draft(request):
-    if request.session.get('ScraperDraft', False):
-        del request.session['ScraperDraft']
-    request.notifications.used = True   # Remove any pending notifications, i.e. the "don't worry, your scraper is safe" one
-    return HttpResponseRedirect(reverse('frontpage'))
 
 
 def convtounicode(text):
@@ -631,3 +643,62 @@ def attachauth(request):
     models.CodePermission(code=scraper, permitted_object=attachtoscraper).save()
     return HttpResponse("Yes")
     
+    
+def webstore_attach_auth(request):
+    mime = 'application/json'    
+    if internal_attach_auth(request):
+        return HttpResponse("{'attach':'Ok'}", mimetype=mime)        
+    else:
+        return HttpResponse("{'attach':'Fail'}", mimetype=mime)
+
+
+def internal_attach_auth( request ):
+    # aquery = {"command":"can_attach", "scrapername":self.short_name, "attachtoname":name, "username":"unknown"}
+    scrapername = request.GET.get("scrapername")
+    attachtoname = request.GET.get("attachtoname")
+    
+    mime = 'application/json'
+    
+    try:
+        attachtoscraper = models.Code.objects.exclude(privacy_status="deleted").get(short_name=attachtoname)
+    except models.Code.DoesNotExist:
+        return True
+
+
+    if attachtoscraper.privacy_status != "private":
+        return True
+#        if scraper:
+#            models.CodePermission(code=scraper, permitted_object=attachtoscraper).save()
+        
+    # dereference scraper (if not draft) so we can look for the attach list
+    if scrapername: 
+        try:
+            scraper = models.Code.objects.exclude(privacy_status="deleted").get(short_name=scrapername)
+        except models.Code.DoesNotExist:
+            return False
+
+        # check against the attachto list
+        if models.CodePermission.objects.filter(code=scraper, permitted_object=attachtoscraper).count() != 0:
+            return True
+    else:
+        scraper = None
+    
+        
+    if not scrapername:
+        return False
+
+    if scraper.privacy_status == 'public':
+        return False
+        
+    # we're going to use the set of editors of a private/protected scraper be the gateway for access to the 
+    # private attach to scraper (success if there is an overlap in the sets)
+    scraperuserroles = models.UserCodeRole.objects.filter(code=scraper)
+    attachtouserroles = models.UserCodeRole.objects.filter(code=attachtoscraper)
+    usersofattach = [ usercoderole.user  for usercoderole in attachtouserroles  if usercoderole.role in ['owner', 'editor'] ]
+    usersofscraper = [ usercoderole.user  for usercoderole in scraperuserroles  if usercoderole.role in ['owner', 'editor'] ]
+    commonusers = set(usersofattach).intersection(set(usersofscraper))
+    if not commonusers:
+        return False
+        
+    models.CodePermission(code=scraper, permitted_object=attachtoscraper).save()
+    return True

@@ -49,7 +49,21 @@ class RunnerSocket:
         data = { "command":'rpcrun', "guid":scraper.guid, "username":user.username, 
                  "language":scraper.language, "scrapername":scraper.short_name, "urlquery":query_string }
         data["django_key"] = config.get('twister', 'djangokey')
-        data["code"] = scraper.saved_code(rev)
+
+        status = scraper.get_vcs_status(-1)
+        data["code"] = status["code"]
+        data["rev"] = status.get("prevcommit", {}).get("rev", -1)
+        data["attachables"] = [ cp.permitted_object.short_name  for cp in models.CodePermission.objects.filter(code=scraper).all() ]
+
+        owners = scraper.userrolemap()["owner"]
+        if owners:
+            try:
+                profile = owners[0].get_profile()
+                ownername = profile.name
+                data['beta_user'] = profile.beta_user   # to enable certain scrapers to go through the lxc process
+            except frontend.models.UserProfile.DoesNotExist:
+                data['beta_user'] = False
+
         try:
             data['userrealname'] = user.get_profile().name
         except frontend.models.UserProfile.DoesNotExist:
@@ -59,9 +73,10 @@ class RunnerSocket:
         self.soc.send(json.dumps(data)+"\r\n") 
 
 
-    def stimulate_run_from_editor(self, scraper, user, clientnumber, language, code, urlquery):
-        data = { "command":'stimulate_run', "language":language, "code":code, "urlquery":urlquery, 
+    def stimulate_run_from_editor(self, scraper, user, clientnumber, language, code, rev, urlquery):
+        data = { "command":'stimulate_run', "language":language, "code":code, "rev":rev, "urlquery":urlquery, 
                  "username":user.username, "scrapername":scraper.short_name, "clientnumber":clientnumber, "guid":scraper.guid }
+        data["attachables"] = [ cp.permitted_object.short_name  for cp in models.CodePermission.objects.filter(code=scraper).all() ]
 
         try:
             profile = user.get_profile()

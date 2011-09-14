@@ -22,7 +22,7 @@ from django.core.serializers.json import DateTimeAwareJSONEncoder
 from django.utils import simplejson
 
 
-from codewiki.models import Scraper, Code, ScraperRunEvent, scraper_search_query, scrapers_overdue
+from codewiki.models import Scraper, Code, ScraperRunEvent, CodePermission, scraper_search_query, scrapers_overdue
 from codewiki.managers.datastore import DataStore
 import frontend
 from cStringIO import StringIO
@@ -271,6 +271,8 @@ def scraper_search_handler(request):
         if settings.INTERNAL_IPS == ["IGNORETHIS_IPS_CONSTRAINT"]:
             boverduescraperrequest = True
 
+    # TODO: If the user has specified an API key then we should pass them into
+    # the search query and refine the resultset  to show only valid scrapers
     if boverduescraperrequest:
         scrapers = scrapers_overdue()  
     else:
@@ -291,7 +293,7 @@ def scraper_search_handler(request):
                 profile = owner.get_profile()
                 ownername = profile.name
                 if boverduescraperrequest:
-                    res['user'] = { "beta_user": profile.beta_user, "id": owner.id }   # to enable certain scrapers to go through the lxc process
+                    res['beta_user'] = profile.beta_user   # to enable certain scrapers to go through the lxc process
             except frontend.models.UserProfile.DoesNotExist:
                 ownername = owner.username
             if not ownername:
@@ -307,18 +309,16 @@ def scraper_search_handler(request):
         # extra data added to the overdue request kind for direct use
         if boverduescraperrequest:
             res['overdue_proportion'] = float(scraper.overdue_proportion)
-            res['code'] = scraper.get_vcs_status(-1)["code"]
+            vcsstatus = scraper.get_vcs_status(-1)
+            res['code'] = vcsstatus["code"]
+            res["rev"] = vcsstatus.get("prevcommit", {}).get("rev", -1)
             res['guid'] = scraper.guid
-            
-            # Fetch the permissions
-            # poss these requests should be done through another avenue that is useful via runs from the editor
-            permissions = []
-            for perm in scraper.permissions.all():
-                permissions.append({'source':   perm.code, 
-                                    'target':   perm.permitted_object,
-                                    'can_read': perm.can_read, 
-                                    'can_write':perm.can_write})
-            res['permissions'] = permissions
+
+            attachables = [ ]
+            for cp in CodePermission.objects.filter(code=scraper).all():
+                if cp.permitted_object.privacy_status != "deleted":
+                    attachables.append(cp.permitted_object.short_name)
+            res["attachables"] = attachables
             
         result.append(res)
         if len(result) > maxrows:
@@ -346,6 +346,7 @@ def scraper_search_handler(request):
 
 
 def usersearch_handler(request):
+    # TODO: Should users be able to choose whether they turn up in search results or not?
     query = request.GET.get('searchquery') 
     try:   
         maxrows = int(request.GET.get('maxrows', ""))
@@ -381,6 +382,7 @@ def usersearch_handler(request):
 
 
 def userinfo_handler(request):
+    # TODO: Should users has the ability to set their profiles to private?
     username = request.GET.get('username', "") 
     users = User.objects.filter(username=username)
     result = [ ]
@@ -413,7 +415,10 @@ def runevent_handler(request):
             result = "%s(%s)" % (request.GET.get("callback"), result)
         return HttpResponse(result)
     
-    
+    # TODO: Check accessibility if this scraper is private
+    if scraper.privacy_status == 'private':
+        pass
+        
     runid = request.GET.get('runid', '-1')
     runevent = None
     if scraper.wiki_type != "view":
@@ -510,6 +515,10 @@ def scraperinfo_handler(request):
 
     for short_name in request.GET.get('name', "").split():
         scraper = getscraperorresponse(short_name, "apiscraperinfo", request.user)
+        # TODO: Check accessibility if this scraper is private
+        if scraper.privacy_status == 'private':
+            pass
+            
         if type(scraper) in [str, unicode]:
             result.append({'error':scraper, "short_name":short_name})
         else:
@@ -535,6 +544,20 @@ def scraperinfo(scraper, history_start_date, quietfields, rev):
     info['tags']        = [tag.name for tag in Tag.objects.get_for_object(scraper)]
     info['wiki_type']   = scraper.wiki_type
     info['privacy_status'] = scraper.privacy_status
+
+    attachables = [ ]
+    for cp in CodePermission.objects.filter(code=scraper).all():
+        if cp.permitted_object.privacy_status != "deleted":
+            attachables.append(cp.permitted_object.short_name)
+    info["attachables"] = attachables
+            
+    # these ones have to be filtering out the incoming private scraper names
+    # (the outgoing attach to list doesn't because they're refered in the code as well)
+    info["attachable_here"] = [ ]
+    for cp in CodePermission.objects.filter(permitted_object=scraper).all():
+        if cp.code.privacy_status not in ["deleted", "private"]:
+            info["attachable_here"].append(cp.code.short_name)
+
     if scraper.wiki_type == 'scraper':
         info['license']     = scraper.scraper.license
         info['records']     = scraper.scraper.record_count  # old style datastore
@@ -568,7 +591,7 @@ def scraperinfo(scraper, history_start_date, quietfields, rev):
 
     if 'history' not in quietfields:
         history = [ ]
-        commitentries = scraper.get_commit_log()
+        commitentries = scraper.get_commit_log("code")
         for commitentry in commitentries:
             if history_start_date and commitentry['date'] < history_start_date:
                 continue

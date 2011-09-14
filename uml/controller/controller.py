@@ -318,6 +318,10 @@ class ScraperController(BaseController):
                     '--ds=%s:%s' % (config.get('dataproxy', 'host'), config.get('dataproxy', 'port')),
                     '--script=%s' % tmpscriptfile, '--scrapername=%s' % scrapername, '--runid=%s' % runid
                ]
+               
+        # *and* beta_user
+        if config.get('dataproxy', 'webstore_port'):
+            args.append("--webstore_port=%s" % config.get('dataproxy', 'webstore_port'))
 
         if poptions.setuid:
             args.append('--gid=%d' % grp.getgrnam("nogroup").gr_gid)
@@ -455,7 +459,6 @@ def autoFirewall():
     rules.append ('-A OUTPUT -p tcp -d %s -j ACCEPT'              % (config.get (socket.gethostname(), 'eth' )))
     rules.append ('-A OUTPUT -p tcp -d %s --dport %s -j ACCEPT'   % (config.get ('httpproxy',  'host'), config.get ('httpproxy',  'port')))
     rules.append ('-A OUTPUT -p tcp -d %s --dport %s -j ACCEPT'   % (config.get ('httpsproxy', 'host'), config.get ('httpsproxy', 'port')))
-    rules.append ('-A OUTPUT -p tcp -d %s --dport %s -j ACCEPT'   % (config.get ('webproxy',   'host'), config.get ('webproxy',   'port')))
     rules.append ('-A OUTPUT -p tcp -d %s --dport %s -j ACCEPT'   % (config.get ('dataproxy',  'host'), config.get ('dataproxy',  'port')))
     rules.append ('-A OUTPUT -p tcp -d %s --dport 3306 -j ACCEPT' % (config.get ('dataproxy',  'host')))
     for line in open ('/etc/resolv.conf').readlines() :
