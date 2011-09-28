@@ -492,19 +492,16 @@ def choose_template(request, wiki_type):
     context = { "wiki_type":wiki_type }
     context["sourcescraper"] = request.GET.get('sourcescraper', '')
     
-    # TODO: Change this to include language version numbers for beta_users
-    if request.user.is_authenticated() and request.user.get_profile().beta_user:
-        if request.GET.get('ajax'):
-            template = 'codewiki/includes/choose_new_template.html'
-        else:
-            template = 'codewiki/choose_new_template.html'
+    vault = request.GET.get('vault', None)
     
-        if wiki_type == "scraper":
-            context["languages"] = models.code.SCRAPER_LANGUAGES
-#            context['versions'] = { 'python': '2.7.1', 'ruby': '1.9.2', 'php': '5.1'}
-        else:
-            context["languages"] = models.code.VIEW_LANGUAGES            
-#            context['versions'] = { 'python': '2.7.1', 'ruby': '1.9.2', 'php': '5.1'}            
+    if request.user.is_authenticated() and request.user.vault_membership.count() > 0 and vault:
+        from itertools import chain
+        template = 'codewiki/includes/add_to_vault.html'
+        langs =  []
+        for i,x in enumerate(models.code.SCRAPER_LANGUAGES):
+            langs.append( (x[0], x[1], models.code.SCRAPER_LANGUAGES_V[i]))        
+        context["languages"] = langs
+        context["vault_id"] = vault;
     else:
         if request.GET.get('ajax'):
             template = 'codewiki/includes/choose_template.html'
