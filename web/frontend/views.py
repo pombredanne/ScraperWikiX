@@ -1,5 +1,5 @@
 from django import forms
-from django.http import HttpResponseRedirect, HttpResponse, Http404
+from django.http import HttpResponseRedirect, HttpResponse, Http404, HttpResponseForbidden
 from django.shortcuts import render_to_response
 from django.contrib import auth
 from django.shortcuts import get_object_or_404
@@ -18,7 +18,7 @@ from tagging.models import Tag, TaggedItem
 from tagging.utils import get_tag, calculate_cloud, get_tag_list, LOGARITHMIC, get_queryset_and_model
 from tagging.models import Tag, TaggedItem
 
-from codewiki.models import UserUserRole, Code, Scraper, View, scraper_search_query, HELP_LANGUAGES, LANGUAGES_DICT
+from codewiki.models import UserUserRole, Code, UserCodeRole, Scraper,Vault, View, scraper_search_query, HELP_LANGUAGES, LANGUAGES_DICT
 from django.db.models import Q
 from frontend.forms import CreateAccountForm
 from registration.backends import get_backend
@@ -491,23 +491,28 @@ def vault_scrapers_remove(request, vaultid, shortname):
     Will set the vault property of the scraper to None but does
     not touch the editorship/ownership which must be done elsewhere.
     """
+    if not request.is_ajax():
+        return HttpResponseForbidden('This page cannot be called directly')
+    
     scraper = get_object_or_404( Scraper, short_name=shortname )
     vault   = get_object_or_404( Vault, pk=vaultid )
-
+    mime = 'application/json'
+    
     # Must own the vault
     if vault.user != request.user:
-        return HttpResponseForbidden("You do not own this vault")
+        return HttpResponse('{"status": "fail", "error":"You do not own this vault"}', mimetype=mime)            
     
     if scraper.vault != vault:
-        return HttpResponseForbidden("The scraper is not in this vault")
+        return HttpResponse('{"status": "fail", "error":"The scraper is not in this vault"}', mimetype=mime)            
     
     # TODO: Decide how we remove the scraper from the vault other than just 
     # removing the vault propery
     
     scraper.vault = None
     scraper.save()
-        
-    return HttpResponseRedirect(reverse('vault'))
+
+    return HttpResponse('{"status": "ok"}', mimetype=mime)                    
+
     
     
 @login_required
@@ -523,28 +528,29 @@ def vault_scrapers_add(request, vaultid, shortname):
     the original owner is demoted to an editor, and the vault owner
     is set as owner (or promoted if they were an editor previously).
     """
+    if not request.is_ajax():
+        return HttpResponseForbidden('This page cannot be called directly')
+    
     scraper = get_object_or_404( Scraper, short_name=shortname )
     vault   = get_object_or_404( Vault, pk=vaultid )
+    mime = 'application/json'
     
-    # Must own the scraper
-    if scraper.owner != request.user:
-        return HttpResponseForbidden("You do not own this scraper")
-
     # Must be a member of the vault
     if not request.user in vault.members.all():
-        return HttpResponseForbidden("You are not a member of this vault")
+        return HttpResponse('{"status": "fail", "error":"You are not a member of this vault"}', mimetype=mime)            
             
     # Old owner is now editor and the new owner should be the vault owner.
     oldowner = request.user
     newowner = vault.user
     
     # OldOwner -> Editor
-    try:
-        uc = UserCodeRole.objects.get(code=scraper, user=oldowner)
-        uc.role = 'editor'
-        uc.save()
-    except:
-        return HttpResponseForbidden("Failed to change your role")
+    if oldowner != request.user:
+        try:
+            uc = UserCodeRole.objects.get(code=scraper, user=oldowner)
+            uc.role = 'editor'
+            uc.save()
+        except:
+            return HttpResponse('{"status": "fail", "error":"Failed to change your role"}', mimetype=mime)            
         
     # Vault owner (newowner) from editor -> owner if editor, otherwise
     # create a new role and assign them.
@@ -555,10 +561,11 @@ def vault_scrapers_add(request, vaultid, shortname):
     uc.role = 'owner'
     uc.save()
     
+    scraper.privacy_status = 'private'
     scraper.vault = vault
     scraper.save()
                 
-    return HttpResponseRedirect(reverse('vault'))
+    return HttpResponse('{"status": "ok" }', mimetype=mime)            
     
     
 @login_required
@@ -586,11 +593,8 @@ def vault_users(request, vaultid, username, action):
     editor = request.user == vault.user
     
     if action =='adduser' and not user in vault.members.all():
-        print 'adding user'
         result['fragment'] = render_to_string( 'frontend/includes/vault_member.html', { 'm' : user, 'vault': vault, 'editor' : editor })                 
-        print result['fragment']
         vault.members.add(user) 
-        print 'added'  
     if action =='removeuser' and user in vault.members.all():
         vault.members.remove(user)        
     vault.save()        
