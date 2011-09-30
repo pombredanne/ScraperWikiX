@@ -8,11 +8,6 @@ class UserCodeRoleInlines(admin.TabularInline):
     model = UserCodeRole
     extra = 1
 
-class ScraperRunEventInlines(admin.TabularInline):
-    model = ScraperRunEvent
-    extra = 0
-
-
 def mark_featured(modeladmin, request, queryset):
     queryset.update(featured=True)
 mark_featured.short_description = 'Mark selected items as featured'
@@ -66,22 +61,24 @@ class VaultAdmin(admin.ModelAdmin):
     Administration for a vault object, not sure yet whether we should hide
     the membership list so that we (scraperwiki) can't see it.
     """
-
     def queryset(self, request):
         return Vault.objects.annotate(member_count=Count('members'))
     def member_count(self, inst):
         return inst.member_count
     member_count.admin_order_field = 'member_count'
 
-    list_display = ('user', 'name', 'plan', 'created_at', 'member_count')
+    list_display = ('name', 'user', 'plan', 'created_at', 'member_count')
     list_filter = ('plan', 'created_at')
     search_fields = ('name',)
 
+class ScraperRunEventAdmin(admin.ModelAdmin):
+    list_display = ('run_id', 'scraper', 'run_started', 'run_ended', 'pages_scraped', 'first_url_scraped')
+    search_fields = ('first_url_scraped',)
 
 admin.site.register(Scraper, ScraperAdmin)
 admin.site.register(View, ViewAdmin)
 admin.site.register(Vault, VaultAdmin)
-admin.site.register(ScraperRunEvent)
+admin.site.register(ScraperRunEvent, ScraperRunEventAdmin)
 admin.site.register(CodePermission)
 
 
