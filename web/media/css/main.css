@@ -10,8 +10,12 @@ h1, h2, h3, h4, h5, h6 {
 	margin: 0;
 }
 
-br.clear {
+br.clear,
+span.clear {
+	display: block;
 	clear: both;
+	height: 0;
+	line-height: 0;
 }
 
 .hide {
@@ -323,7 +327,8 @@ body.frontpage #nav_inner li.frontpage {
 
 /* ALERT BAR */
 
-#alert_outer {
+#alert_outer,
+.alert_outer {
 	position: fixed;
 	top: 0;
 	left: 0;
@@ -346,7 +351,14 @@ body.frontpage #nav_inner li.frontpage {
 	filter: dropshadow(color=#ffee99, offx=0, offy=1);
 }
 
-#alert_outer a {
+div.editor .alert_outer {
+	position: static;
+	font-size: 14px;
+	line-height: 20px;
+}
+
+#alert_outer a,
+.alert_outer a {
 	color: #411;
 	font-size: 14px;
 	line-height: 20px;
@@ -356,7 +368,7 @@ body.frontpage #nav_inner li.frontpage {
 	border-radius: 4px;
 	padding: 3px 7px 2px 7px;
 	margin-left: 10px;
-	box-shadow: 0 1px 0 rgba(255,255,255,0.8);
+	box-shadow: 0 1px 0 rgba(255,255,255,0.8), 0 0 10px #fff;
 	background: -moz-linear-gradient(top, rgba(255,255,255,0.8) 0%, rgba(255,255,255,0.4) 50%, rgba(255,255,255,0.1) 51%, rgba(255,255,255,0) 100%);
 	background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,rgba(255,255,255,0.8)), color-stop(50%,rgba(255,255,255,0.4)), color-stop(51%,rgba(255,255,255,0.1)), color-stop(100%,rgba(255,255,255,0)));
 	background: -webkit-linear-gradient(top, rgba(255,255,255,0.8) 0%,rgba(255,255,255,0.4) 50%,rgba(255,255,255,0.1) 51%,rgba(255,255,255,0) 100%);
@@ -366,7 +378,8 @@ body.frontpage #nav_inner li.frontpage {
 	background: linear-gradient(top, rgba(255,255,255,0.8) 0%,rgba(255,255,255,0.4) 50%,rgba(255,255,255,0.1) 51%,rgba(255,255,255,0) 100%);
 }
 
-#alert_outer a:hover {
+#alert_outer a:hover,
+.alert_outer a:hover {
 	text-decoration: none;
 	border-color: #daa744;
 	background: -moz-linear-gradient(top, rgba(255,255,255,1) 0%, rgba(255,255,255,0.7) 50%, rgba(255,255,255,0.4) 51%, rgba(255,255,255,0.2) 100%);
@@ -378,7 +391,22 @@ filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#ffffff', end
 background: linear-gradient(top, rgba(255,255,255,1) 0%,rgba(255,255,255,0.7) 50%,rgba(255,255,255,0.4) 51%,rgba(255,255,255,0.2) 100%);
 }
 
-#alert_inner {
+#alert_outer a.secondary,
+.alert_outer a.secondary {
+	background-color: #edc339;
+	box-shadow: 0 1px 0 rgba(255,255,255,0.8);
+	color: #6a502f;
+	border-color: #d1aa6a;
+}
+
+#alert_outer a.secondary:hover,
+.alert_outer a.secondary:hover {
+	color: #411;
+	border-color: #ca8e29;
+}
+
+#alert_inner,
+.alert_inner {
 	position: relative;
 	font-size: 16px;
 	line-height: 20px;
@@ -408,6 +436,8 @@ a#alert_close {
 a#alert_close:hover {
 	background: transparent url(../images/alert_close.gif) -20px 0 no-repeat;
 }
+
+
 
 
 
@@ -1441,7 +1471,7 @@ body.profiles.edit small.error_hint {
 	border: 2px solid #39c;
 	border-top: none;
 	margin-bottom: 6px;
-	padding: 12px 15px 0 15px;
+	padding: 12px 15px;
 	display: none;
 	position: relative;
 	-moz-border-radius-bottomright: 4px;
@@ -1456,11 +1486,45 @@ body.profiles.edit small.error_hint {
 
 #request_options div p {
 	margin: 0;
-	padding-bottom: 15px;
 	line-height: 18px;
 	font-size: 14px;
 	color: #666;
+	padding-left: 45px;
+	background: transparent url(../images/request_data_icon_scraper.gif) 0px 1px no-repeat;
+	min-height: 32px;
 }
+
+#request_options div p + p {
+	margin-top: 15px;
+}
+
+#request_options #private p {
+	background-image: url(../images/request_data_icon_vault.gif);
+}
+
+#request_options #viz p {
+	background-image: url(../images/request_data_icon_viz.gif);
+}
+
+#request_options #app p {
+	background-image: url(../images/request_data_icon_app.gif);
+}
+
+#request_options #etl p {
+	background-image: url(../images/request_data_icon_etl.gif);
+}
+
+#page_inner #request_options p.paid {
+	background-image: url(../images/request_data_icon_paid.gif);
+}
+
+#page_inner #request_options p.free {
+	background-image: url(../images/request_data_icon_free.gif);
+}
+
+
+
+
 
 #request_form ul {
 	padding: 0;
@@ -3517,7 +3581,7 @@ ul.scraper_list .screenshot img {
 	color: #808080;
 	font-variant: small-caps;
 	margin: 0;
-	padding: 0.5em 0;
+	padding: 0;
 }
 
 .code_about li {
@@ -5873,10 +5937,6 @@ body.vaults .vault_contents li.code_object_line h3 {
 	font-size: 18px;
 	padding: 5px 0;
 	width: 500px;
-}
-
-body.vaults table.code_about {
-	padding: 0;
 }
 
 body.vaults .vault_contents li.code_object_line p.description {

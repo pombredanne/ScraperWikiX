@@ -17,6 +17,7 @@ from codewiki import util
 from codewiki.models.vault import Vault
 from frontend.models import UserProfile
 import textile   # yuk
+import creoleparser  # creoleparser.text2html(cdesc); method may include pre and post processing of text to handle links and paramstrings encoding nicely
 
 try:
     import json
@@ -112,6 +113,7 @@ class Code(models.Model):
     relations          = models.ManyToManyField("self", blank=True)  # manage.py refuses to generate the tabel for this, so you haev to do it manually.
     forked_from        = models.ForeignKey('self', null=True, blank=True)
     privacy_status     = models.CharField(max_length=32, choices=PRIVACY_STATUSES, default='public')
+    previous_privacy   = models.CharField(max_length=32, choices=PRIVACY_STATUSES, null=True, blank=True)
     
     # For private scrapers this can be provided to API calls as proof that the caller has access
     # to the scraper, it is really a shared secret between us and the caller. For the datastore 
@@ -186,7 +188,7 @@ class Code(models.Model):
     def is_sick_and_not_running(self):
         lastscraperrunevent = self.last_runevent()
         if self.status == 'sick':
-            if (not lastscraperrunevent.id) or (lastscraperrunevent.id and lastscraperrunevent.pid == -1):
+            if (not lastscraperrunevent) or (not lastscraperrunevent.id) or (lastscraperrunevent.id and lastscraperrunevent.pid == -1):
                 return True
         return False
 
@@ -319,6 +321,8 @@ class Code(models.Model):
                 cdesc = "%s\n\n_Has %d secret query-string environment variable%s._" % (cdesc, nqsenvvars, (nqsenvvars>1 and "s" or ""))
 
         return textile.textile(cdesc)   # wikicreole at the very least here!!!
+
+        
 
     def description_safepart(self):   # used in the api output
         cdesc = re.sub('(?s)__BEGIN_QSENVVARS__.*?__END_QSENVVARS__', '', self.description)

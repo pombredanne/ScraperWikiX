@@ -86,7 +86,7 @@
            <ul class="data_tabs"> 
                 <li class="clear"></li> 
            </ul> 
-            <div id="data_content_1" class="data_content">
+            <div id="data_content_1" class="data_content" style="overflow-x: hidden;">
                 <table class="data" cellspacing="0" cellpadding="0" style="border-collapse: collapse">
                     <tbody>
                         <tr class="row"><td width="120">&nbsp;</td><td width="120">&nbsp;</td><td width="120">&nbsp;</td><td width="120">&nbsp;</td><td width="120">&nbsp;</td></tr>
@@ -111,9 +111,6 @@
                     This scraper is being worked on <br/>and there is no data to display yet
                 {% endif %}
             </div>
-            <div class="content_footer">
-                &nbsp;
-            </div>
         {% endif %}
     </div>
 </div>
@@ -127,7 +124,8 @@
         {% else %}
             <a href="{% url login %}?next={% url code_overview 'scraper' scraper.short_name %}" class="edit">[sign in to edit description]</a>
         {% endif %}
-{%comment%}
+        
+       {%comment%}
         {% if user.is_staff %}
           <span class="staff">
           {% if ckanresource %}
@@ -138,8 +136,9 @@
           {% endif %}
           </span>
         {% endif %}
-{%endcomment%}
+       {%endcomment%}
     </h2>
+
     <div class="text_wiki">
         <div id="divAboutScraper">
         {% if scraper.description %}
@@ -154,6 +153,13 @@
             {% endif %}</p>
         {% endif %}</div>
     </div>
+
+    {%if descriptionfromcode %}
+    <div id="descriptionfromcode" class="staff">
+      <h2>Text derived from the code</h2>
+      {{descriptionfromcode|safe}}
+    </div>
+    {% endif %}
 </div>
 
 {% include 'codewiki/includes/tags.html' %}
@@ -248,7 +254,7 @@ $(document).ready(function()
     setupChangeAttachables('{{scraper.short_name}}'); 
 {% if user.is_authenticated %}
 //    setupButtonConfirmation("btnClearDatastore", "Are you sure? Clicking 'ok' will delete all SCRAPED DATA.");
-    setupButtonConfirmation("btnDeleteScraper", "Are you sure? Clicking 'ok' will delete THE ENTIRE SCRAPER and it's data.");
+//    setupButtonConfirmation("btnDeleteScraper", "Are you sure? Clicking 'ok' will delete THE ENTIRE SCRAPER and its data.");
 {% endif %}
 });
 </script>

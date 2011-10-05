@@ -41,7 +41,9 @@ urlpatterns = patterns('',
                                                           views.scraper_schedule_scraper,name='scraper_schedule_scraper'),
     url(r'^(?P<wiki_type>scraper|view)s/delete-scraper/(?P<short_name>[\w_\-\.]+)/$', 
                                                           views.scraper_delete_scraper, name='scraper_delete_scraper'),
-        
+    url(r'^(?P<wiki_type>scraper|view)s/undelete-scraper/(?P<short_name>[\w_\-\.]+)/$', 
+                                                          views.scraper_undelete_scraper, name='scraper_undelete_scraper'),
+                                                                  
     url(r'^(?P<wiki_type>scraper|view)s/(?P<short_name>[\w_\-\.]+)/$',          views.code_overview,    name='code_overview'),
     url(r'^(?P<wiki_type>scraper|view)s/(?P<short_name>[\w_\-\.]+\?name=.*)$', views.code_overview,    name='code_overview'),    
     url(r'^(?P<wiki_type>scraper|view)s/(?P<short_name>[\w_\-\.]+)/history/$',  views.scraper_history,  name='scraper_history'),
@@ -68,7 +70,10 @@ urlpatterns = patterns('',
     # editor 
     url(r'^handle_session_draft/$',                       viewseditor.handle_session_draft, name="handle_session_draft"),
     url(r'^handle_editor_save/$',                         viewseditor.handle_editor_save,   name="handle_editor_save"),    
+    
+    url(r'^(?P<wiki_type>scraper|view)s/(?P<short_name>[\w_\-\.]+)/edit2/$',   viewseditor.newedit, name="editor_newedit"),    
     url(r'^(?P<wiki_type>scraper|view)s/(?P<short_name>[\w_\-\.]+)/edit/$',   viewseditor.edit, name="editor_edit"),
+    
     url(r'^(?P<wiki_type>scraper|view)s/new/(?P<language>[\w]+)/tovault/(?P<id>\d+)/$',    viewseditor.add_to_vault, name="add_to_vault"),
     url(r'^(?P<wiki_type>scraper|view)s/new/(?P<language>[\w]+)$',            viewseditor.edit, name="editor"),
     
