@@ -1,16 +1,15 @@
 # -*- coding: utf-8 -*-
 
-import string
-import socket
-import urllib
-import urllib2
 import cgi
 import datetime
-import types
-import socket
-import re
 import os
-import scraperwiki
+import re
+import socket
+import socket
+import string
+import types
+import urllib
+import urllib2
 
 try   : import json
 except: import simplejson as json
@@ -24,6 +23,9 @@ m_scrapername = None
 m_runid = None
 m_attachables = [ ]
 m_verification_key = ''
+# The JSON object returned by the initial connection
+m_connection_res = None
+sbuffer = [ ]
 
 verify = ''
 def make_request(data, attachlist):
@@ -59,51 +61,64 @@ def create(host, port, scrapername, runid, attachables, verification_key=None):
     m_verification_key = verification_key or ''
         
 
-        # a \n delimits the end of the record.  you cannot read beyond it or it will hang
 def receiveoneline(socket):
-    sbuffer = [ ]
+    # poor implementation.  But previous longstanding version even had a bug on it if records concattenated
+    global sbuffer
+    if len(sbuffer) >= 2:
+        return sbuffer.pop(0)
     while True:
         srec = socket.recv(1024)
         if not srec:
             scraperwiki.dumpMessage({'message_type': 'chat', 'message':"socket from dataproxy has unfortunately closed"})
-            break
+            return None
         ssrec = srec.split("\n")  # multiple strings if a "\n" exists
-        sbuffer.append(ssrec.pop(0))
-        if ssrec:
-            break
-    line = "".join(sbuffer)
-    return line
+        sbuffer.append(ssrec[0])
+        if len(ssrec) >= 2:
+            line = "".join(sbuffer)
+            sbuffer = ssrec[1:]
+            return line
 
 
 def ensure_connected():
+    """Create and connect a socket to the dataproxy, if not already
+    done.  Stores state in (module) global variables.
+    """
+
     global m_socket
     global m_scrapername
     global m_runid
     global m_verification_key
+    global m_connected_res
     
     if not m_socket:
         m_socket = socket.socket()
         m_socket.connect((m_host, m_port))
 
+        data = {"uml": 'lxc', "port":m_socket.getsockname()[1]}
         # needed to make it work locally.  how has this ever worked?
         #data["uml"] = "uml001"
-        data = {"uml": 'lxc', "port":m_socket.getsockname()[1]}
 
         data["vscrapername"] = m_scrapername
         data["vrunid"] = m_runid
         data["attachables"] = " ".join(m_attachables)
         data['verify'] = m_verification_key
+        data['progress_ticks'] = "yes"
         
         m_socket.sendall('GET /?%s HTTP/1.1\n\n' % urllib.urlencode(data))
-        line = receiveoneline(m_socket)  # comes back with True, "Ok"
-        res = json.loads(line)
-        #assert res.get("status") == "good", res
-        
+        line = receiveoneline(m_socket)
+        m_connected_res = json.loads(line)
 
 def request(req):
     ensure_connected()
-    m_socket.sendall(json.dumps(req)+'\n')
+    # Fragile, in that it depends on the details of the object returned
+    # by dataproxy.
+    if m_connected_res.get('status') != 'good':
+        return m_connected_res
+        
+    if req != None:
+        m_socket.sendall(json.dumps(req)+'\n')
     line = receiveoneline(m_socket)
+    #print str([line])
     if not line:
         return {"error":"blank returned from dataproxy"}
     return json.loads(line)

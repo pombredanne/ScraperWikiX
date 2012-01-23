@@ -4,8 +4,6 @@ import BaseHTTPServer
 import ConfigParser
 import SocketServer
 import cgi
-import datalib
-import datetime
 import grp
 import hashlib
 import optparse
@@ -18,7 +16,6 @@ import time
 import traceback
 import urllib
 import urlparse
-import traceback
 
 import logging
 import logging.config
@@ -27,6 +24,9 @@ try:
     import json
 except:
     import simplejson as json
+
+# ScraperWiki
+import datalib
 
 # note: there is a symlink from /var/www/scraperwiki to the scraperwiki directory
 # which allows us to get away with being crap with the paths
@@ -58,10 +58,12 @@ class ProxyHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         short_name = ''
 
         host = None
-        add = None
+        lxc_addr = None
         try:
+            # Expects lxc_server config variable to be of the form
+            # NNN.N.N.N:PPPP (an IP address and port).
             host = config.get("dataproxy", 'lxc_server')
-            add  = host[0:host.find(':')]
+            lxc_addr  = host[0:host.find(':')]
         except:
             host = None
 
@@ -71,11 +73,13 @@ class ProxyHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         rem       = self.connection.getpeername()
         loc       = self.connection.getsockname()               
         
-        if host and (rem[0].startswith(add) or rem[0].startswith('10.0.1') or vm_ctr == 'lxc'):
+        if host and (rem[0].startswith(lxc_addr) or rem[0].startswith('10.0.1') or vm_ctr == 'lxc'):
             # No need to do the ident, we will return a non-existent runID,short_name for now
             logger.debug('We are using LXC so use parameters for ident')
-            logger.debug( "%s -> %s" % (params.get('vrunid'), params.get("vscrapername",''),) )
-            return params.get('vrunid'), params.get("vscrapername", '')            
+            vrunid = params.get('vrunid')
+            vscrapername = params.get('vscrapername', '')
+            logger.debug("%s -> %s" % (vrunid, vscrapername))
+            return vrunid, vscrapername
 
                 # should be using cgi.parse_qs(query) technology here                
         logger.debug("LIDENT: %s" % (lident,) )
@@ -133,8 +137,9 @@ class ProxyHandler(BaseHTTPServer.BaseHTTPRequestHandler):
                 else:
                     dataauth = "writable"
 
-                logger.debug( '.%s.' % [short_name])
-                    # send back identification so we can compare against it (sometimes it doesn't quite work out)
+                logger.debug('short_name %r' % [short_name])
+                # Send back identification so we can compare against it
+                # (sometimes it doesn't quite work out).
                 firstmessage["short_name"] = short_name
                 firstmessage["runID"] = runID
                 firstmessage["dataauth"] = dataauth
@@ -170,7 +175,7 @@ class ProxyHandler(BaseHTTPServer.BaseHTTPRequestHandler):
                 logger.warning("connection to dataproxy socket.error: "+str(firstmessage))
             if "error" in firstmessage:
                 logger.warning("connection to dataproxy refused error: "+str(firstmessage["error"]))
-                self.connection.close()
+                self.connection.shutdown(socket.SHUT_RDWR)
                 return
             
             logger.debug("connection made to dataproxy for %s %s - %s" % (dataauth, short_name, runID))

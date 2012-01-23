@@ -23,9 +23,12 @@ DATABASES = {
         'NAME'       : '',
         'USER'       : '',
         'PASSWORD'   : '',
+        'OPTIONS': {
+            "init_command": "SET storage_engine=MyISAM",
+        }
     }
-
 }
+
 URL_ROOT            = '/'           # prefix for URLs to run not at top level of domain
 
 # Ways of speeding up tests.

@@ -1,7 +1,9 @@
-import unittest
 import atexit
+import time
+import unittest
+import uuid
+
 from selenium import selenium
-import uuid, time
 
 # XXX make this a static member
 def SeleniumTest_atexit():
@@ -53,7 +55,7 @@ class SeleniumTest(unittest.TestCase):
                 s.click("djHideToolBarButton")
         
         
-    def wait_for_page(self, doing=None):
+    def wait_for_page(self):
         hit_limit = True
         # DO NOT call anything else (even for debugging, e.g. self.selenium.get_location) at this point as:
         # "Running any other Selenium command after turns the flag to false."
@@ -61,18 +63,18 @@ class SeleniumTest(unittest.TestCase):
         try:
             self.selenium.wait_for_page_to_load('30000')
             hit_limit = False
-        except:
-            print 'Failed to load page in first 30 seconds, adding another 30'
+        except Exception, e:
+            if "Timed out" in str(e):
+                print str(e) + ", trying again"
+            else:
+                raise
         
         if hit_limit:
             try:
                 self.selenium.wait_for_page_to_load('30000')
                 hit_limit = False
-            except:
-                if not doing:
-                    msg = 'It took longer than 60 seconds to visit %s, it may have failed' % self.selenium.get_location()
-                else:
-                    msg = 'It took longer than 60 seconds to: %s' % doing
+            except Exception, e:
+                msg = 'Error on second attempt to load page: %s' % (str(e))
                 self.fail(msg=msg)
 
         if self._verbosity > 1:
@@ -127,7 +129,8 @@ class SeleniumTest(unittest.TestCase):
         s.click('//a[@class="editor_%s"]' % code_type)        
         time.sleep(1)
         link_name = { "python":"Python", "ruby":"Ruby", "php":"PHP" }[language]
-        s.click("//a[text()=' %s ']" % link_name )
+        s.click("link=*%s*" % link_name )
+        time.sleep(1)
         self.wait_for_page()
     
         # Prompt and wait for save button to activate

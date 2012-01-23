@@ -5,6 +5,30 @@ var lastRev = null;
 var setupKeygrabs;     // function
 var inRollback = false;
 
+
+//	A duplicate of the usual function (in scraperwiki.js)
+//	but with a few changes for the unusual Editor DOM layout
+function newAlert(htmlcontent, level, actions){
+	if(typeof(level) != 'string'){ level = 'error'; }
+	$alert_outer = $('<div>').attr('id','alert_outer').addClass(level);
+	$alert_inner = $('<div>').attr('id','alert_inner').html(htmlcontent);
+	if(typeof(actions) == 'object'){
+		console.log('actions is an object');
+		var a = '<a href="' + actions.url + '"';
+		if(typeof(actions.secondary) != 'undefined'){
+			s += ' class="secondary"'
+		}
+		a += '>' + actions.text + '</a>';
+		$alert_inner.append(a);
+	}
+	console.log(typeof(actions));
+	$('<a>').attr('id','alert_close').bind('click', function(){ 
+		$('#alert_outer').slideUp(250);
+		$('body div.editor').animate({paddingTop:0}, 250);
+	}).appendTo($alert_inner);
+	$('body div.editor').prepend($alert_outer.prepend($alert_inner)).css('padding-top', $('#alert_outer').outerHeight());
+}
+
 $(document).ready(function() 
 {
     // variable transmitted through the html
@@ -15,6 +39,7 @@ $(document).ready(function()
     var isstaff = $('#isstaff').val(); 
     var beta_user = $('#beta_user').val(); 
     scraperlanguage = $('#scraperlanguage').val(); 
+    var scraper_owners = ( $('#scraper_owners').val().length != 0 ? $('#scraper_owners').val().split(';') : [] );
     var run_type = $('#code_running_mode').val();
     codemirror_url = $('#codemirror_url').val();
     var wiki_type = $('#id_wiki_type').val(); 
@@ -189,7 +214,7 @@ $(document).ready(function()
     conn.onopen = function(code)
     {
         sChatTabMessage = 'Chat'; 
-        $('.editor_output div.tabs li.chat a').html(sChatTabMessage);
+        $('.editor_output div.tabs li.chat a').html(sChatTabMessage + '<b class="unread"></b>');
 
         writeToChat('Connection opened: ' + (conn.readyState == conn.READY_STATE_OPEN ? 'Ready' : 'readystate=' + conn.readyState)); 
         bConnected = true; 
@@ -210,43 +235,47 @@ $(document).ready(function()
 
 
     // read data back from twisted (called from editorqueues)
-    receiveRecordMain = function(data) 
-    {
-          if (data.nowtime)
-             servernowtime = parseISOdate(data.nowtime); 
-			
-          if (data.message_type == "console") {
-              writeRunOutput(data.content);     // able to divert text to the preview iframe
-          } else if (data.message_type == "sources") {
-              writeToSources(data.url, data.mimetype, data.bytes, data.failedmessage, data.cached, data.cacheid, data.ddiffer, data.fetchtime)
-          } else if (data.message_type == "editorstatus") {
-              recordEditorStatus(data); 
-          } else if (data.message_type == "chat") {
-              writeToChat(cgiescape(data.message), data.chatname); 
-          } else if (data.message_type == "saved") {
-              writeToChat("<i>saved</i>", data.chatname);  
-          } else if (data.message_type == "othersaved") {
-              reloadScraper();
-              writeToChat("<i>saved in another window</i>", data.chatname);  
-          } else if (data.message_type == "requestededitcontrol") {
-
-// this should popup something if there has been no activity for a while with a count-down timer that eventually sets the editinguser down and
-// self-demotes to autoload with the right value of iselectednexteditor selected
-writeToChat("<b>requestededitcontrol: "+data.username+ " has requested edit control but you have last typed " + (new Date() - lasttypetime)/1000 + " seconds ago"); 
-
-          } else if (data.message_type == "giveselrange") {
-              //writeToChat("<b>selrange: "+data.chatname+" has made a select range: "+$.toJSON(data.selrange)+"</b>"); 
-              makeSelection(data.selrange); // do it anyway
-          } else if (data.message_type == "data") {
-              writeToData(data.content);
-          } else if (data.message_type == "sqlitecall") {
-              writeToSqliteData(data.command, data.val1, data.lval2);
-          } else if (data.message_type == "exception") {
-              writeExceptionDump(data.exceptiondescription, data.stackdump, data.blockedurl, data.blockedurlquoted); 
-          } else if (data.message_type == "executionstatus") {
-              if (data.content == "startingrun")
-                startingrun(data.runID, data.uml, data.chatname);
-              else if (data.content == "runcompleted") {
+    receiveRecordMain = function(data){
+		if (data.nowtime){
+        	servernowtime = parseISOdate(data.nowtime); 
+		}
+        if (data.message_type == "console") {
+            writeRunOutput(data.content);     // able to divert text to the preview iframe
+        } else if (data.message_type == "sources") {
+            writeToSources(data.url, data.mimetype, data.bytes, data.failedmessage, data.cached, data.cacheid, data.ddiffer, data.fetchtime)
+        } else if (data.message_type == "editorstatus") {
+            recordEditorStatus(data); 
+        } else if (data.message_type == "chat") {
+            writeToChat(cgiescape(data.message), data.chatname); 
+        } else if (data.message_type == "saved") {
+            writeToChat("<i>saved</i>", data.chatname);  
+        } else if (data.message_type == "othersaved") {
+            reloadScraper();
+            writeToChat("<i>saved in another window</i>", data.chatname);  
+        } else if (data.message_type == "requestededitcontrol") {
+			var lasttypeseconds = (new Date() - lasttypetime)/1000;			
+			if( scraper_owners.indexOf(data.username) == -1 && lasttypeseconds < 60 ){
+				msg = "Sorry, you cannot steal control from " + chatname + " they last typed " + Math.round(lasttypeseconds) + " seconds ago. Try again in " + Math.round(60 - lasttypeseconds) + " seconds."
+				data = {"command": 'chat', "guid": guid, "username": "Could not steal control", "text": msg};
+                sendjson(data);
+			} else {
+				iselectednexteditor = loggedineditors.indexOf(data.username);
+				changeAutomode('autoload');
+				writeToChat("<b>requestededitcontrol: " + data.username + " stole editor control");
+			}			
+        } else if (data.message_type == "giveselrange") {
+            //writeToChat("<b>selrange: "+data.chatname+" has made a select range: "+$.toJSON(data.selrange)+"</b>"); 
+            makeSelection(data.selrange); // do it anyway
+        } else if (data.message_type == "data") {
+            writeToData(data.content);
+        } else if (data.message_type == "sqlitecall") {
+            writeToSqliteData(data.command, data.val1, data.lval2);
+        } else if (data.message_type == "exception") {
+            writeExceptionDump(data.exceptiondescription, data.stackdump, data.blockedurl, data.blockedurlquoted); 
+        } else if (data.message_type == "executionstatus") {
+            if (data.content == "startingrun") {
+            	startingrun(data.runID, data.uml, data.chatname);
+            } else if (data.content == "runcompleted") {
                 var messageparts = [ ];
                 if (data.elapsed_seconds != undefined)
                     messageparts.push(data.elapsed_seconds + " seconds elapsed"); 
@@ -259,21 +288,21 @@ writeToChat("<b>requestededitcontrol: "+data.username+ " has requested edit cont
                 else if (data.term_sig)
                     messageparts.push("terminated by signal " + data.term_sig);
                 writeToConsole("Finished: "+messageparts.join(", "));
-              } else if (data.content == "killsignal")
+            } else if (data.content == "killsignal") {
                 writeToConsole(data.message); 
-              else if (data.content == "runfinished") 
+            } else if (data.content == "runfinished") {
                 endingrun(data.content, data.contentextra); 
-              else 
-                writeToConsole(data.content); 
-
-          } else if (data.message_type == "httpresponseheader") {
-              writeToConsole("Header:::", "httpresponseheader"); 
-              writeToConsole(data.headerkey + ": " + data.headervalue, "httpresponseheader"); 
-          } else if (data.message_type == "typing") {
-              $('#lasttypedtimestamp').text(String(new Date())); 
-          } else {
-              writeToConsole(data.content, data.message_type); 
-          }
+            } else  {
+                writeToConsole(data.content);
+			}
+        } else if (data.message_type == "httpresponseheader") {
+            writeToConsole("Header:::", "httpresponseheader"); 
+            writeToConsole(data.headerkey + ": " + data.headervalue, "httpresponseheader"); 
+        } else if (data.message_type == "typing") {
+            $('#lasttypedtimestamp').text(String(new Date())); 
+        } else {
+            writeToConsole(data.content, data.message_type); 
+        }
     }
 
 
@@ -394,11 +423,14 @@ writeToChat("<b>requestededitcontrol: "+data.username+ " has requested edit cont
         var selectednexteditor = loggedineditors[iselectednexteditor]; 
         wstatus = '<a href="'+ $('input#userprofileurl').val().replace(/XXX/g, selectednexteditor) +'" target="_blank">'+selectednexteditor+'</a>'; 
         if (loggedineditors.length >= 3)
-            wstatus += ' (<a class="plusone">+' + (loggedineditors.length-2) + '</a>)'; 
+            wstatus += ' (<a class="plusone" title="Click to cycle through other watchers">+' + (loggedineditors.length-2) + '</a>)'; 
         wstatus += ' <a class="plusoneselect">is</a> watching'; 
         $('#watcherstatus').html(wstatus); 
         if (loggedineditors.length >= 3)
-            $('#watcherstatus .plusone').click(function() { iselectednexteditor += 1; setwatcherstatusmultieditinguser() }); 
+            $('#watcherstatus .plusone').click(function() { 
+				iselectednexteditor += 1; setwatcherstatusmultieditinguser();
+				$('#btnWatch').val('Let ' + loggedineditors[iselectednexteditor] + ' edit');
+			}); 
         $('#watcherstatus .plusoneselect').click(transmitSelection); 
     }
 
@@ -463,18 +495,27 @@ writeToChat("<b>requestededitcontrol: "+data.username+ " has requested edit cont
         if (automode == 'draft') 
             return;
 
+		// $('#watcher_alert').show().children('editor_name').text(editingusername);
+
         // you are the editing user
-        if (username && (editingusername == username))
-        {
+        if (username && (editingusername == username)){
+			$('#run').show();
+			$('#btnEdit').hide();
             $('.editor_controls #watch_button_area').toggle((loggedineditors.length != 1));
-
-            if (loggedineditors.length >= 2)
-                setwatcherstatusmultieditinguser(); // sets links to call self
-            else
-                $('#watcherstatus').html(""); 
-
-            if (automode == 'autoload')
-            {
+            if (loggedineditors.length >= 2){
+				// Next relinquish will default to previous editor
+				if (automode == 'autoload'){
+					iselectednexteditor = loggedineditors.length -1; 
+				}
+		        setwatcherstatusmultieditinguser(); // sets links to call self
+				$('#btnWatch').show();
+            } else {
+                $('#watcherstatus').html("");
+				$('#btnWatch').hide();
+			}
+			$('#btnWatch').val('Let ' + loggedineditors[iselectednexteditor] + ' edit');
+			
+            if (automode == 'autoload'){
                 setCodeMirrorReadOnly(false);
                 changeAutomode('autosave'); 
                 $('.editor_controls #run').attr('disabled', false);
@@ -488,17 +529,17 @@ writeToChat("<b>requestededitcontrol: "+data.username+ " has requested edit cont
                 sendjson({"command":'automode', "automode":'autosave'}); 
             }
         }
-
         // you are not the editing user, someone else is
-        else if (editingusername)
-        {
-            $('#watcherstatus').html('<a href="'+$('input#userprofileurl').val().replace(/XXX/g, editingusername)+'" target="_blank">'+editingusername+'</a> <a class="plusoneselect">is</a> <a class="plusoneediting">editing</a>'); 
-            if (username)
-                $('#watcherstatus .plusoneediting').click(function() { sendjson({"command":'requesteditcontrol', "user":username}); }); 
-            $('#watcherstatus .plusoneselect').click(transmitSelection); 
+        else if (editingusername){
+			$('#btnWatch, #run').hide();
+			$('#btnEdit').show();
+            $('#watcherstatus').html('<a href="'+$('input#userprofileurl').val().replace(/XXX/g, editingusername)+'" target="_blank">'+editingusername+'</a> <a class="plusoneselect">is</a> <a class="plusoneediting">editing</a>');
+            if (username){
+                $('#watcherstatus .plusoneediting, #btnEdit').bind('click', function() { sendjson({"command":'requesteditcontrol', "user":username}); });
+			}
+            $('#watcherstatus .plusoneselect').bind('click', transmitSelection); 
 
-            if (automode != 'autoload')
-            {
+            if (automode != 'autoload'){
                 $('.editor_controls #watch_button_area').hide();
                 changeAutomode('autoload'); // watching
                 setCodeMirrorReadOnly(true);
@@ -512,6 +553,7 @@ writeToChat("<b>requestededitcontrol: "+data.username+ " has requested edit cont
         // you are not logged in and the only person looking at the scraper
         else
         {
+			$('#btnWatch, #btnEdit').hide();
             $('#watcherstatus').text(""); 
             changeAutomode('autosave'); // editing
             $('.editor_controls #watch_button_area').hide();
@@ -867,7 +909,7 @@ writeToChat("<b>requestededitcontrol: "+data.username+ " has requested edit cont
         {
             var errmessage = "Response error: " + textStatus + "  thrown: " + errorThrown + "  text:" + jqXHR.responseText; 
             writeToChat(errmessage);
-            alert('Sorry, something went wrong with the save, please try copying your code and then reloading the page. Technical details: ' + textStatus);
+			newAlert('Sorry, something went wrong with the save. Try copying your code and reloading the page.');
             window.setTimeout(function() { $('.editor_controls #btnCommitPopup').val('save' + (wiki_type == 'scraper' ? ' scraper' : '')).removeClass('darkness'); }, 1100);  
         }});
 
