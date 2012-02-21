@@ -13,38 +13,38 @@ def and_i_click_on_a_plan_button(step, plan, button):
     el = world.browser.find_by_xpath(".//h3[text()='%s']/../p/a[text()='%s']" % (plan, button)).first
     el.click()
 
-@step(u'Given I have chosen the "([^"]*)" plan')
-def given_i_have_chosen_a_plan(step, plan):
+@step(u'(?:Given|And) I have chosen the "([^"]*)" plan')
+def i_have_chosen_a_plan(step, plan):
     username = 'test-%s' % time.strftime('%Y%m%dT%H%M%S')
     step.behave_as('Given user "%s" with password "pass" is logged in' % username)
     world.browser.visit(django_url('/subscribe/%s' % plan.lower()))
     world.wait_for_element_by_css('.card_number')
 
-@step(u'When I enter my contact information')
-def when_i_enter_my_contact_information(step):
+@step(u'(?:When|And) I enter my contact information')
+def i_enter_my_contact_information(step):
     contact_info = world.browser.find_by_css('.contact_info').first
     contact_info.find_by_css('.first_name input').first.fill('Test') 
     contact_info.find_by_css('.last_name input').first.fill('Testerson') 
     contact_info.find_by_css('.email input').first.fill('test@testerson.com') 
 
-@step(u'And I enter "([^"]*)" as the billing name')
-def and_i_enter_the_billing_name(step, billing_name):
+@step(u'(?:When|And) I enter "([^"]*)" as the billing name')
+def i_enter_the_billing_name(step, billing_name):
     billing_info = world.browser.find_by_css('.billing_info').first
     billing_info.find_by_css('.first_name input').first.fill('Test') 
     billing_info.find_by_css('.last_name input').first.fill('Testerson') 
 
-@step(u'And I enter "([^"]*)" as the credit card number')
-def and_i_enter_the_credit_card_number(step, number):
+@step(u'(?:When|And) I enter "([^"]*)" as the credit card number')
+def i_enter_the_credit_card_number(step, number):
     billing_info = world.browser.find_by_css('.billing_info').first
     billing_info.find_by_css('.card_number input').first.fill(number) 
 
-@step(u'And I enter "([^"]*)" as the CVV')
-def and_i_enter_the_cvv(step, cvv):
+@step(u'(?:When|And) I enter "([^"]*)" as the CVV')
+def i_enter_the_cvv(step, cvv):
     billing_info = world.browser.find_by_css('.billing_info').first
     billing_info.find_by_css('.cvv input').first.fill(cvv) 
     
-@step(u'And I enter "([^"]*)" as the expiry month and year')
-def and_i_enter_the_expiry_month_and_year(step, expiry):
+@step(u'(?:When|And) I enter "([^"]*)" as the expiry month and year')
+def i_enter_the_expiry_month_and_year(step, expiry):
     month, year = expiry.split('/')
     # The option value for month does not have a leading 0.
     month = str(int(month))
@@ -53,8 +53,8 @@ def and_i_enter_the_expiry_month_and_year(step, expiry):
     year = "20%s" % year
     world.browser.find_option_by_text(year).first.check()
 
-@step(u'And I enter the billing address')
-def and_i_enter_the_billing_address(step):
+@step(u'(?:When|And) I enter the billing address')
+def i_enter_the_billing_address(step):
     div = world.browser.find_by_css('.billing_info').first
     div.find_by_css('.address1 input').first.fill('ScraperWiki Limited')
     div.find_by_css('.address2 input').first.fill('146 Brownlow Hill')
@@ -63,8 +63,12 @@ def and_i_enter_the_billing_address(step):
     world.browser.find_option_by_value('GB').first.check()
     div.find_by_css('.state input').first.fill('MERSEYSIDE')
 
-@step(u'And I have entered my payment details')
-def and_i_have_entered_my_payment_details(step):
+@step(u'(?:When|And) I select "([^"]*)" from the country select box')
+def i_select_a_country_from_the_country_select_box(step, country):
+    world.browser.find_option_by_text(country).first.check()
+
+@step(u'(?:When|And) I have entered my payment details')
+def i_have_entered_my_payment_details(step):
     # Using Credit Card details for the recurly test gateway:
     # http://docs.recurly.com/payment-gateways/test-gateway
     step.behave_as("""
@@ -76,16 +80,20 @@ def and_i_have_entered_my_payment_details(step):
       And I enter the billing address
       """)
 
-@step(u'And I already have the individual plan')
-def and_i_already_have_the_individual_plan(step):
+@step(u'(?:When|And) I enter "([^"]*)" as the VAT number')
+def i_enter_the_vat_number(step, number):
+    world.browser.find_by_css('.vat_number input').first.fill(number)
+
+@step(u'(?:Given|When|And) I already have the individual plan')
+def i_already_have_the_individual_plan(step):
     from django.contrib.auth.models import User
 
     user = User.objects.get(username='test')
     profile = user.get_profile()
     profile.change_plan('individual')
 
-@step(u'Then I should see "([^"]*)" in the individual box')
-def then_i_should_see_text_in_the_individual_box(step, text):
+@step(u'(?:Then|And) I should see "([^"]*)" in the individual box')
+def i_should_see_text_in_the_individual_box(step, text):
     something = world.browser.find_by_xpath(
       ".//div[@id='%s']//*[text()='%s']" % ('individual', text))
     assert something
