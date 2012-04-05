@@ -63,8 +63,8 @@ def profile_detail(request, username):
     profile = profiled_user.get_profile()
     
     extra_context = {
-                     'owned_code_objects' : profile.owned_code_objects(profiled_user),
-                     'emailer_code_objects' : profile.emailer_code_objects(username, profiled_user)
+                     'owned_code_objects' : profile.owned_code_objects(user),
+                     'emailer_code_objects' : profile.emailer_code_objects(username, user)
                     }
     return profile_views.profile_detail(request, username=username, extra_context=extra_context)
 
@@ -166,11 +166,10 @@ def login(request):
                 backend = get_backend(settings.REGISTRATION_BACKEND)             
                 new_user = backend.register(request, **registration_form.cleaned_data)
 
-                # Add user to invited vault if there's a corresponding token
-                if request.POST.has_key('token'):
-                    invite = Invite.objects.get(token=request.POST['token'])
-                    if invite:
-                        invite.vault.members.add(new_user)
+                # Check for any invitations.
+                r = handle_signup_invites(new_user)
+                if r:
+                    redirect = r
 
                 #sign straight in
                 signed_in_user = auth.authenticate(username=request.POST['username'], password=request.POST['password1'])
@@ -190,11 +189,42 @@ def login(request):
                }
 
     # Add token as hidden field
-    if request.GET.has_key('t'):
-        context['token'] = request.GET['t']
+    if request.GET.has_key('t') or request.POST.has_key('token'):
+        token = request.GET.get('t', None) or request.POST.get('token', None)
+        # Will error if token is invalid.
+        invite = Invite.objects.get(token=token)
+        context['invite'] = invite
+        context['registration_form'].initial = {'email':invite.email}
 
-    return render_to_response('registration/extended_login.html', context,
-                               context_instance = RequestContext(request))
+    return render_to_response('registration/extended_login.html',
+      context, context_instance = RequestContext(request))
+
+def handle_signup_invites(user):
+    """Handle any outstanding invites for a user (that has just
+    signed up).  For each invite, we add to vault and email
+    owner."""
+
+    invites = Invite.objects.filter(email=user.email)
+    # Freeze the list of invites, so we can in two passes edit
+    # the model, then send all the emails.
+    invites = list(invites)
+
+    for invite in invites:
+        invite.vault.members.add(user)
+        # Invitation used up; delete it.
+        invite.delete()
+
+    for invite in invites:
+        message = render_to_string('emails/invitation_accepted.txt', locals())
+        django.core.mail.send_mail(
+            subject='%s has accepted your invitation to %s' % (invite.email, invite.vault.name),
+            message=message,
+            from_email='Vault Notification <noreply@scraperwiki.com>',
+            recipient_list=[invite.vault.user.email],
+            fail_silently=False)
+
+    if invites:
+        return reverse('vault')
 
 def help(request, mode=None, language=None):
     tutorials = {}
@@ -723,6 +753,9 @@ def vault_users(request, vaultid, username, action):
     View which allows a user to add/remove users from their vault. Will
     only work on the current user's vault so if they don't have one then
     it won't work.
+
+    *username* (used for 'adduser' etc) can be a username or an
+    email address.
     """
     from codewiki.models import Vault
     mime = 'application/json'
@@ -738,10 +771,13 @@ def vault_users(request, vaultid, username, action):
         if current_plan not in ('business','corporate',):
             return HttpResponse('''{"status": "fail", "error":"You can't add users to this vault. Please upgrade your ScraperWiki account."}''', mimetype=mime)            
     if action == 'adduser' and '@' in username:
-        invite_to_vault(vault_owner=vault.user, email=username, vault=vault)
-        return HttpResponse("""{"status": "invited",
-                              "message": "Invitation sent!"}""",
-                            mimetype=mime)
+        if User.objects.filter(email=username):
+            # They're already a ScraperWiki user.
+            username = User.objects.get(email=username).username
+            # Fall all the way out of the two nested 'if's
+        else:
+            result = invite_to_vault(vault_owner=vault.user, email=username, vault=vault)
+            return HttpResponse(json.dumps(result), mimetype=mime)
 
     try:
         user = User.objects.get(username=username)    
@@ -775,10 +811,16 @@ def vault_users(request, vaultid, username, action):
     return HttpResponse( json.dumps(result), mimetype=mime)
 
 def invite_to_vault(vault_owner, email, vault):
-    """Send an e-mail to address *mail* inviting them to *vault*."""
-    from codewiki.models import Invite
+    """Send an e-mail to address *mail* inviting them to *vault*.
+    Returns a dict to use as the JSON result.
+    """
 
-    token = str(uuid.uuid1().hex)[:20]
+    # May get overwritten if there is an error.
+    result = { 'status' : 'invited',
+      'message' : "Invitation sent!" }
+
+    # Truncated to avoid annoying Django/e-mail/Quoted-Printable madness.
+    token = str(uuid.uuid4().hex)[:20]
     context = locals()
     context.update({'token': token})
 
@@ -789,10 +831,15 @@ def invite_to_vault(vault_owner, email, vault):
     msg = EmailMultiAlternatives(subject, text_content, vault_owner.email,
       to=[email], bcc=[vault_owner.email])
     msg.attach_alternative(html_content, "text/html")
-    msg.send(fail_silently=False)
+    try:
+        msg.send(fail_silently=False)
+    except EnvironmentError as e:
+        result = { 'status' : 'fail',
+          'error' : "Couldn't send email" }
 
-    invite = Invite(token=context['token'], vault=vault)
+    invite = Invite(token=context['token'], email=email, vault=vault)
     invite.save()
+    return result
 
 ###############################################################################
 # Corporate mini-site
