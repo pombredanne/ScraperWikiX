@@ -73,7 +73,7 @@ MIDDLEWARE_CLASSES = [
     'middleware.impersonate.ImpersonateMiddleware', # must be after AuthenticationMiddleware, of course!
     'django.contrib.messages.middleware.MessageMiddleware',
     'django_notify.middleware.NotificationsMiddleware',
-    'pagination.middleware.PaginationMiddleware',    
+    'pagination.middleware.PaginationMiddleware',
     'middleware.csrfcookie.CsrfAlwaysSetCookieMiddleware',
     'api.middleware.CORSMiddleware'
 ]
@@ -90,7 +90,7 @@ TEMPLATE_DIRS = [
 ]
 
 TEMPLATE_CONTEXT_PROCESSORS = [
-  'django.contrib.auth.context_processors.auth', 
+  'django.contrib.auth.context_processors.auth',
   'django.core.context_processors.debug',
   'django.core.context_processors.i18n',
   'django.core.context_processors.media',
@@ -99,7 +99,7 @@ TEMPLATE_CONTEXT_PROCESSORS = [
   'django_notify.context_processors.notifications',
   'frontend.context_processors.site',
   'frontend.context_processors.template_settings',
-  'frontend.context_processors.vault_info',  
+  'frontend.context_processors.vault_info',
   # 'frontend.context_processors.site_messages', # disabled as not used since design revamp April 2011
 ]
 
@@ -133,11 +133,11 @@ INSTALLED_APPS = [
     'tagging',
     'contact_form',
     'captcha',
-    'pagination',    
+    'pagination',
     'compressor',
 ] + SCRAPERWIKI_APPS
 
-TEST_RUNNER = 'scraperwiki_tests.run_tests' 
+TEST_RUNNER = 'scraperwiki_tests.run_tests'
 
 ACCOUNT_ACTIVATION_DAYS = 3650 # If you haven't activated in 10 years then tough luck!
 
@@ -176,7 +176,7 @@ ABSOLUTE_URL_OVERRIDES = {
 
 # Required for the template_settings context processor. Each varible listed
 # here will be made availible in all templates that are passed the
-# RequestContext.  Be careful of listing database and other private settings 
+# RequestContext.  Be careful of listing database and other private settings
 # here
 TEMPLATE_SETTINGS = [
  'API_URL',
@@ -208,7 +208,7 @@ CODEMIRROR_URL = "CodeMirror-%s/" % CODEMIRROR_VERSION
 
 APPROXLENOUTPUTLIMIT = 3000
 
-CONFIGFILE = "/var/www/scraperwiki/uml/uml.cfg"
+CONFIGFILE = "../uml/uml.cfg"
 
 HTTPPROXYURL = "http://localhost:9005"
 DISPATCHERURL = "http://localhost:9000"
@@ -237,16 +237,15 @@ LOGGING = {
     'handlers': {
         # Include the default Django email handler for errors
         # This is what you'd get without configuring logging at all.
-#        'mail_admins': {
-#            'class': 'django.utils.log.AdminEmailHandler',
-#            'level': 'ERROR',
-#             # But the emails are plain text by default - HTML is nicer
-#            'include_html': True,
-#        },
+        'console':{
+            'level': 'DEBUG',
+            'class': 'logging.StreamHandler',
+            'formatter': 'simple'
+        },
         # Log to a text file that can be rotated by logrotate
         'logfile': {
             'class': 'logging.custom_handlers.WorldWriteRotatingFileHandler',
-            'filename': '/var/log/scraperwiki/django-www.log',
+            'filename': '../logs/www.log',
             'mode': 'a',
             'maxBytes': 100000,
             'backupCount': 5,
@@ -254,25 +253,11 @@ LOGGING = {
         },
     },
     'loggers': {
-        # Again, default Django configuration to email unhandled exceptions
-#        'django.request': {
-#            'handlers': ['mail_admins'],
-#            'level': 'ERROR',
-#            'propagate': True,
-#        },
-        # Might as well log any errors anywhere else in Django 
-        # (so use empty string for name here to catch anything)
         '': {
-            'handlers': ['logfile'],
+            'handlers': ['console'],
             'level': DEBUG and 'DEBUG' or 'ERROR',
             'propagate': False,
         },
-        # Your own app - this assumes all your logger names start with "myapp."
-        #'myapp': {
-        #    'handlers': ['logfile'],
-        #    'level': 'WARNING', # Or maybe INFO or DEBUG
-        #    'propagate': False
-        #},
     },
 }
 

@@ -7,7 +7,7 @@ from django.db import models
 class Migration(SchemaMigration):
 
     def forwards(self, orm):
-        
+        #pass
         # Deleting model 'Vault'
         db.delete_table('codewiki_vault')
 
@@ -15,11 +15,11 @@ class Migration(SchemaMigration):
         db.delete_table('codewiki_vault_members')
 
         # Changing field 'Code.vault'
-        db.alter_column('codewiki_code', 'vault_id', self.gf('django.db.models.fields.related.ForeignKey')(null=True, to=orm['models.Vault']))
+        #db.alter_column('codewiki_code', 'vault_id', self.gf('django.db.models.fields.related.ForeignKey')(null=True, to=orm['models.Vault']))
 
 
     def backwards(self, orm):
-        
+
         # Adding model 'Vault'
         db.create_table('codewiki_vault', (
             ('created_at', self.gf('django.db.models.fields.DateTimeField')(auto_now_add=True, blank=True)),
