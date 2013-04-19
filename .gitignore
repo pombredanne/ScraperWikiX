@@ -1,5 +1,13 @@
 *.py[cod]
 
+bin/
+lib/
+include/
+docs/
+man/
+share/
+.Python
+
 # C extensions
 *.so
 
