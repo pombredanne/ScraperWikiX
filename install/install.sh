@@ -18,4 +18,4 @@ echo "Go and install node from http://nodejs.org/download/"
 #echo "Need to authenticate to install node and run ''"
 #sudo make install
 
-npm install nodejs-bin mu opts streamlogger underscore
+npm install mu opts streamlogger underscore
