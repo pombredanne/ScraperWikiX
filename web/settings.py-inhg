@@ -47,7 +47,7 @@ DATAPROXY_PORT  = 9003  # Dataproxy port - see uml.cfg
 FEEDBACK_EMAIL = 'feedback@somedomain.com'
 FEEDBACK_EMAIL_TITLE = ''
 
-DEFAULT_FROM_EMAIL = 'bugs@scraperwiki.com'
+DEFAULT_FROM_EMAIL = 'bugs@somedomain.com'
 EMAIL_HOST = 'localhost'
 EMAIL_PORT = '1025'
 EMAIL_SUBJECT_PREFIX = ""
@@ -82,8 +82,4 @@ if DEBUG:
         'django.template.loaders.app_directories.load_template_source',
     ]
     SQL_DEBUG = False
-
-if DEBUG:
-    # Django-nose: https://github.com/jbalogh/django-nose
-    INSTALLED_APPS += ['django_nose']
 

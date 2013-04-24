@@ -103,14 +103,12 @@ TEMPLATE_CONTEXT_PROCESSORS = [
 ]
 
 SCRAPERWIKI_APPS = [
-    # the following are scraperwiki apps
     'frontend',
     'codewiki',
     'api',
     'cropper',
     'kpi',
     'documentation',
-    #'devserver',
     'froth',
 ]
 
@@ -122,7 +120,7 @@ INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.markup',
     'registration',
-    'south',
+    #'south',
     'profiles',
     'django.contrib.humanize',
     'django.contrib.messages',
