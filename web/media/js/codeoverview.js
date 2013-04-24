@@ -1,8 +1,8 @@
 /* GENERAL FUNCTIONS */
 
-$.fn.digits = function(){ 
-    return this.each(function(){ 
-        $(this).text( $(this).text().replace(/(\d)(?=(\d\d\d)+(?!\d))/g, "$1,") ); 
+$.fn.digits = function(){
+    return this.each(function(){
+        $(this).text( $(this).text().replace(/(\d)(?=(\d\d\d)+(?!\d))/g, "$1,") );
     })
 }
 
@@ -78,10 +78,10 @@ function setupCodeOverview(short_name){
 			},
             onblur: 'ignore',
             event: 'dblclick',
-            placeholder: '',             
+            placeholder: '',
             submitdata : {short_name: short_name}
          });
-         
+
     $('#aEditTitle').bind('click', function(){
 		$('#hCodeTitle').dblclick();
 		return false;
@@ -104,7 +104,7 @@ function setupCollaborationUI(){
 		$('#contributors .new_user_li, #contributors .error').remove();
 		$('#privacy_status>p, #privacy_status>h4, #show_privacy_choices, #contributors a.add_user').show();
 	});
-	
+
 	$('#show_privacy_choices').bind('click', function(){
         $('#privacy_status form').show();
         $('#privacy_status>p, #privacy_status>h4, #show_privacy_choices').hide();
@@ -112,53 +112,21 @@ function setupCollaborationUI(){
 
     $('#saveprivacy').bind('click', function(){
 		$('input[name=privacy_status]:checked').hide().after('<img src="/media/images/load2.gif" width="16" height="16">').parents('tr').find('input, select').attr('disabled', true);
-		if($('#current_vault_id').length){
-			$.getJSON('/vaults/' + $('#current_vault_id').val() + '/removescraper/' + $('#scrapershortname').val() + '/' + $('input[name=privacy_status]:checked').val(), function(data) {
-				if(data.status == 'ok'){
-					reloadCollaborationUI('#privacy_status');
-				} else {
-					alert('Scraper could not be removed from vault: ' + data.error);
-				}
-			});
-		} else {
-			var sdata = { value: $('input[name=privacy_status]:checked').val() }
-			$.ajax({url:$("#adminprivacystatusurl").val(), type: 'POST', data:sdata, success:function(result){
-				if (result.substring(0, 6) == "Failed"){
-	                alert(result); 
-	            } else {
-					reloadCollaborationUI('#privacy_status');
-				}
-			}});
-		}
+		var sdata = { value: $('input[name=privacy_status]:checked').val() }
+		$.ajax({url:$("#adminprivacystatusurl").val(), type: 'POST', data:sdata, success:function(result){
+			if (result.substring(0, 6) == "Failed"){
+                alert(result);
+            } else {
+				reloadCollaborationUI('#privacy_status');
+			}
+		}});
     }).hide();
 
 	//	Handle clicks on the "make this public" and "make this protected" paragraphs
 	$('#privacy_public, #privacy_protected, #privacy_private').bind('change', function(){
 		$('#saveprivacy').trigger('click');
 	});
-	
-	$('#move_to_vault').bind('change', function(){
-		if($(this).val() == ''){
-			$(this).next().attr('disabled','disabled');
-		} else {
-			$(this).next().attr('disabled',false);
-			$(this).parents('td').prev().find('input:radio').attr('checked', true)
-		}
-	}).next().attr('disabled','disabled').bind('click', function(e){
-		e.preventDefault();
-		if(!$(this).is(':disabled')){
-			$(this).val('Moving\u2026').attr('disabled','disabled').prev().attr('disabled','disabled');
-			$(this).parents('td').prev().find('input:radio').hide().after('<img src="/media/images/load2.gif" width="16" height="16">').parents('tr').find('input, select').attr('disabled', true);
-			$.getJSON($(this).prev().val(), function(data) {
-				if(data.status == 'ok'){
-					reloadCollaborationUI('#privacy_status');
-				} else {
-					alert('Scraper could not be moved to vault: ' + data.error);
-				}
-			});
-		}
-	});
-	
+
 	$('#collaboration a.add_user').bind('click', function(){
 		var input = $('<input>').attr('id','username').attr('type','text').attr('class','text').bind('keydown', function(e){
 			// handle Enter/Return key as a click on the Add button
@@ -172,8 +140,8 @@ function setupCollaborationUI(){
 					url: $('#id_api_base').val() + "scraper/usersearch",
 					dataType: "jsonp",
 					data: {
-						format:"jsondict", 
-						maxrows:10, 
+						format:"jsondict",
+						maxrows:10,
 						searchquery:request.term
 					},
 					success: function( data ) {
@@ -191,16 +159,16 @@ function setupCollaborationUI(){
 				//  $(this).next('a').trigger('click');
 			}
 		});
-	
-		var confirm = $('<a>').text('Add!').bind('click', function(){			
+
+		var confirm = $('<a>').text('Add!').bind('click', function(){
 			var $u = $(this).prev();
 			$u.parents('ul').children('.error').slideUp(150);
 			$('#collaboration .buttons li:eq(1) a').prepend('<img src="/media/images/load2.gif" width="16" height="16">');
-			var sdata = { roleuser: $u.val(), newrole:'editor' }; 
+			var sdata = { roleuser: $u.val(), newrole:'editor' };
 	        $.ajax({
-				url:$("#admincontroleditors").val(), 
-				type: 'GET', 
-				data:sdata, 
+				url:$("#admincontroleditors").val(),
+				type: 'GET',
+				data:sdata,
 				success:function(result){
 		            if (result.substring(0, 6) == "Failed") {
 						$('#collaboration .buttons li:eq(1) img').remove();
@@ -216,21 +184,21 @@ function setupCollaborationUI(){
 		        }
 	        });
 		});
-		
+
 		var li = $('<li>').hide().addClass("new_user_li").append('<label for="username">Username:</label>').append(input).append(confirm);
-		
+
 		$(this).slideUp(250).prev().append(li).children(':last').slideDown(250).find('#username').focus();
-	
+
 	});
-	
+
 	$('.demotelink').bind('click', function(){
 		$(this).parents('ul').children('.error').slideUp(150);
 		$('#collaboration .buttons li:eq(1) a').prepend('<img src="/media/images/load2.gif" width="16" height="16">');
-        var sdata = { roleuser:$(this).parents("li:first").find("span").text(), newrole:'' }; 
+        var sdata = { roleuser:$(this).parents("li:first").find("span").text(), newrole:'' };
 		$.ajax({
-			url:$("#admincontroleditors").val(), 
-			type: 'GET', 
-			data:sdata, 
+			url:$("#admincontroleditors").val(),
+			type: 'GET',
+			data:sdata,
 			success:function(result){
 	            if (result.substring(0, 6) == "Failed") {
 					$('#collaboration .buttons li:eq(1) img').remove();
@@ -246,7 +214,7 @@ function setupCollaborationUI(){
 	        }
         });
     });
-	
+
 }
 
 function reloadCollaborationUI(auto_enable_tab){
@@ -265,7 +233,7 @@ function reloadCollaborationUI(auto_enable_tab){
 				$('ul.buttons li').eq($(auto_enable_tab).index() - 1).children().addClass('selected');
 			}
 		}
-	});	
+	});
 }
 
 function setupScheduleUI(){
@@ -282,7 +250,7 @@ function setupScheduleUI(){
 			});
 		}
 	});
-	
+
 	$('.edit_schedule').bind('click', function(e){
 		e.preventDefault();
 		if($('#edit_schedule').is(':hidden')){
@@ -293,7 +261,7 @@ function setupScheduleUI(){
 			$(this).removeClass('cancel').text('Edit');
 		}
 	});
-	
+
 	$('.schedule a.run').bind('click', function(e){
 		e.preventDefault();
 		$.getJSON($(this).attr('href'), function(data) {
@@ -322,7 +290,7 @@ function reloadScheduleUI(){
 /* ONREADY FUNCTIONS */
 
 $(function(){
-    // globals 
+    // globals
     api_url = $('#id_api_base').val();
 	sqlite_url = api_url + 'datastore/sqlite?'
 	if($('#id_apikey').val() != ''){
@@ -334,16 +302,16 @@ $(function(){
     short_name = $('#scrapershortname').val();
     data_tables = [];
 
-    setupDataPreviews();	
+    setupDataPreviews();
 	setupCollaborationUI();
 	setupScheduleUI();
-	
+
 	$('li.share .embed a').bind('click', function(e){
 		e.preventDefault();
 		$(this).parents('.share_popover').fadeOut(400).prev().removeClass('hover');
 		$('html').unbind('click');
         $('#add_view_to_site').modal({
-            overlayClose: true, 
+            overlayClose: true,
             autoResize: true,
             overlayCss: { cursor:"auto" },
 			onShow: function(dialog){
@@ -363,7 +331,7 @@ $(function(){
 			}
         });
 	});
-	
+
 	$('li.share a, li.admin a, li.download a').each(function(){
 		$(this).bind('click', function(){
 			var $a = $(this).addClass('hover');
@@ -387,33 +355,33 @@ $(function(){
 			}
 		});
 	});
-	
+
 	$('#delete_scraper, #empty_datastore').bind('click', function(e){
 		e.preventDefault();
 		$(this).next().children(':submit').trigger('click');
 	});
-	
+
 	$('.full_history a').bind('click', function(e){
 		e.preventDefault();
-		if(!$(this).is('.disabled')){ 
+		if(!$(this).is('.disabled')){
 			$button = $(this).text('Loading\u2026');
 			$.ajax({
 				url: $button.attr('href'),
 				success: function(data) {
 					$('.history>div').empty().html(data).each(function(){
 						$(".cprev").hide();     // hide these ugly titles for now
-					    hideallshowhistrun(); 
+					    hideallshowhistrun();
 
 					    $(".history_edit").each(function(i, el) { previewchanges_hide($(el)) });
 
-					    $(".history_edit .showchanges").click(function() { previewchanges_show($(this).parents(".history_edit")); }); 
-					    $(".history_edit .hidechanges").click(function() { previewchanges_hide($(this).parents(".history_edit")); }); 
+					    $(".history_edit .showchanges").click(function() { previewchanges_show($(this).parents(".history_edit")); });
+					    $(".history_edit .hidechanges").click(function() { previewchanges_hide($(this).parents(".history_edit")); });
 
-					    $(".history_edit .history_code_border .otherlinenumbers").click(previewchanges_showsidecode); 
-					    $(".history_edit .history_code_border .linenumbers").click(previewchanges_showsidecode); 
+					    $(".history_edit .history_code_border .otherlinenumbers").click(previewchanges_showsidecode);
+					    $(".history_edit .history_code_border .linenumbers").click(previewchanges_showsidecode);
 
-					    $(".history_run_event .showrunevent").click(function() { previewrunevent_show($(this).parents(".history_run_event")); }); 
-					    $(".history_run_event .hiderunevent").click(function() { previewrunevent_hide($(this).parents(".history_run_event")); }); 
+					    $(".history_run_event .showrunevent").click(function() { previewrunevent_show($(this).parents(".history_run_event")); });
+					    $(".history_run_event .hiderunevent").click(function() { previewrunevent_hide($(this).parents(".history_run_event")); });
 
 					    // if they put # and the run_id in the URL, open up that one
 					    if (window.location.hash) {
@@ -428,7 +396,7 @@ $(function(){
                                  } else {
                                      $(hash_run_event).css('border','4px solid #278D2F');
                                  }
-                                 
+
 					        }
 					    }
 					});
@@ -440,13 +408,13 @@ $(function(){
 			});
 		}
 	});
-	
-	
+
+
 	function show_new_tag_box(){
 		$('div.tags').show();
 		$('.new_tag').hide().next().show().find('input').focus();
 	}
-	
+
 	function hide_new_tag_box(){
 		$('li.new_tag_box input').animate({width:1}, 200, function(){
 			$(this).css('width','auto').val('').parent().hide().prev().show();
@@ -455,19 +423,19 @@ $(function(){
 			}
 		});
 	}
-	
+
 	$('.new_tag a, div.network .titlebar .tag a').bind('click', function(e){
 		e.preventDefault();
 		show_new_tag_box();
 	});
-	
+
 	$('li.new_tag_box input').bind('keyup', function(event){
 		var key = event.keyCode ? event.keyCode : event.which ? event.which : event.charCode;
 		if(key == 13){
 			var new_tag = $(this).val();
 			var new_tag_array = new_tag.split(',');
-			var tags = [ ]; 
-	        $("div.tags ul li").not('.new_tag, .new_tag_box').each(function(i, el) { 
+			var tags = [ ];
+	        $("div.tags ul li").not('.new_tag, .new_tag_box').each(function(i, el) {
 				tags.push($(el).children('a:first').text());
 			});
 			tags.push(new_tag);
@@ -497,15 +465,15 @@ $(function(){
 	}).next('.hide').bind('click', function(){
 		hide_new_tag_box();
 	});
-	
+
 	$('div.tags a.remove').live('click', function(e){
 		e.preventDefault();
 		$old_tag = $(this).parent();
-		var tags = [ ]; 
-        $("div.tags ul li").not('.new_tag, .new_tag_box').not($old_tag).each(function(i, el) { 
+		var tags = [ ];
+        $("div.tags ul li").not('.new_tag, .new_tag_box').not($old_tag).each(function(i, el) {
 			tags.push($(el).children('a:first').text());
 		});
-		
+
 		$.ajax({
 			type: 'POST',
 			url: $("#adminsettagurl").val(),
@@ -525,7 +493,7 @@ $(function(){
 });
 
 function setupTabFolding(){
-	
+
 	function make_more_link(){
         $('ul.data_tabs .clear').before(
             $('<li id="more_tabs" title="Show more tabs" style="display:none"><span id="more_tabs_number">0</span> more &raquo;<ul></ul></li>')
@@ -554,7 +522,7 @@ function setupTabFolding(){
 
 $.fn.switchTab = function(){
 	return this.each(function(){
-		
+
 		$('.data_tab.selected').removeClass('selected');
 		$(this).addClass('selected');
 		if($(this).is('#more_tabs li')){
@@ -562,11 +530,11 @@ $.fn.switchTab = function(){
 		} else {
 			$('#more_tabs').removeClass('selected');
 		}
-		
+
 		var table_name = $(this).attr('id').replace('data_tab_', '');
 		var $dp_div = $('#data_preview_'+table_name);
-		
-		if( $dp_div.is('.hidden')){		
+
+		if( $dp_div.is('.hidden')){
 			$dp_div.removeClass('hidden').siblings().addClass('hidden');
 	        $("li.table_csv a").attr("href", $('#id_api_base').val() + "datastore/sqlite?format=csv&name=" + $('#scrapershortname').val() + "&query=select+*+from+`"+ encodeURI( $(".data_tab.selected .tablename").text() ) + "`" + "&apikey=" + $('#id_apikey').val());
 	        $("li.table_json a").attr("href", $('#id_api_base').val() + "datastore/sqlite?format=json&name=" + $('#scrapershortname').val() + "&query=select+*+from+`"+ encodeURI( $(".data_tab.selected .tablename").text() ) + "`" + "&apikey=" + $('#id_apikey').val());
@@ -577,13 +545,13 @@ $.fn.switchTab = function(){
 function setupTabClicks(){
 	$('li.data_tab').live('click', function(){
 		$(this).switchTab();
-	});	
+	});
 }
 
 function getTableNames(callback){
 	var url;
 	url = sqlite_url + "format=jsondict&name="+short_name+"&query=SELECT%20name, sql%20FROM%20main.sqlite_master%20WHERE%20type%3D'table'%3B";
-  
+
 	$.ajax({
 		type: 'GET',
 		url: url,
@@ -592,7 +560,7 @@ function getTableNames(callback){
 		success: function(data){
 		    var count_url, tables;
 		    if (typeof(data) == 'object' && data.error) {
-		        setDataPreviewWarning(data.error); 
+		        setDataPreviewWarning(data.error);
 		        $('#header span.totalrows').text("Datastore error");
 		    } else if (data.length) {
 		        tables = _.reduce(_.map(data, function(d) {
@@ -638,7 +606,7 @@ function getTableColumnNames(table_name, callback){
 		cache: false,
 		success: function(data){
 		    if (data.error) {
-		        setDataPreviewWarning(data.error); 
+		        setDataPreviewWarning(data.error);
 		        $('#header span.totalrows').text("Datastore error");
 		    } else {
 		    	callback(data.keys);
@@ -660,7 +628,7 @@ function getTableRowCounts(tables, callback){
 		cache: false,
 		success: function(resp){
 			if (resp.error) {
-		        setDataPreviewWarning(resp.error); 
+		        setDataPreviewWarning(resp.error);
 		        $('#header span.totalrows').text("Datastore error");
 		    } else {
 	        	var zipped = _.zip(resp.keys, resp.data[0]);
@@ -786,7 +754,7 @@ function setupDataPreviews() {
 
 			    $("li.table_csv a").attr("href", $('#id_api_base').val() + "datastore/sqlite?format=csv&name=" + $('#scrapershortname').val() + "&query=select+*+from+`"+ encodeURI( $(".data_tab.selected .tablename").text() ) + "`" + "&apikey=" + $('#id_apikey').val());
 			    $("li.table_json a").attr("href", $('#id_api_base').val() + "datastore/sqlite?format=json&name=" + $('#scrapershortname').val() + "&query=select+*+from+`"+ encodeURI( $(".data_tab.selected .tablename").text() ) + "`" + "&apikey=" + $('#id_apikey').val());
-			
+
 				$('a.moar').live('click', function(e){
 					e.preventDefault();
 					var url = $(this).attr('href');
@@ -796,7 +764,7 @@ function setupDataPreviews() {
 						dataType: 'jsonp',
 						success: function(data){
 							$('<div>').attr('id', 'moar').text(data[0].moar).modal({
-					            overlayClose: true, 
+					            overlayClose: true,
 					            autoResize: true,
 					            overlayCss: { cursor:"auto" },
 								maxHeight: $(window).height() * 0.7,
@@ -816,8 +784,8 @@ function setupDataPreviews() {
 						}
 					});
 				})
-			
-			}); 
+
+			});
 		}
 	);
 }

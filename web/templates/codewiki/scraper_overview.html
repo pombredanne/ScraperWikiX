@@ -73,13 +73,9 @@
     	{% if scraper.privacy_status == 'visible' %}
     	    <span class="privacystatus visible" href="#privacy_status" title="This {{scraper.wiki_type|lower}} can be viewed by anyone, but edited only by its owner and listed contributors">Protected</span>
         {% endif %}
-        {% if scraper.vault %}
-            <span class="privacystatus private" href="#privacy_status" title="This {{scraper.wiki_type|lower}} can only be viewed or edited by members of the vault &lsquo;{{ scraper.vault.name }}&rsquo;">In {% if scraper.vault.user.username == user.username %}your{% else %}{{scraper.vault.user.get_profile.name}}&rsquo;s{% endif %} vault</span>
-        {% else %}
-            {% if scraper.privacy_status == 'private' %}
-    	    <span class="privacystatus private" href="#privacy_status" title="This {{scraper.wiki_type|lower}} can only be viewed or edited by its owner or listed contributors">Private</span>
-    	    {% endif %}
-    	{% endif %}
+        {% if scraper.privacy_status == 'private' %}
+	    <span class="privacystatus private" href="#privacy_status" title="This {{scraper.wiki_type|lower}} can only be viewed or edited by its owner or listed contributors">Private</span>
+	    {% endif %}
     </p>
 {% endblock %}
 
@@ -114,7 +110,6 @@
 
 <ul class="toolbar">
     <li class="edit"><a href="{% url editor_edit scraper.wiki_type scraper.short_name %}" rel="nofollow"><img src="{{ MEDIA_URL }}images/icons/edit.png" width="16" height="16" alt="">Edit</a></li>
-    <li class="copy"><a href="{% url editor scraper.wiki_type scraper.language %}{% if scraper.vault %}/tovault/{{scraper.vault.id}}/{% endif %}?fork={{scraper.short_name}}{% if scraper.vault %}&name={{scraper.short_name}}_copy{% endif %}" title="Create a new {{scraper.wiki_type}} with this {{scraper.wiki_type}}&rsquo;s code" rel="nofollow"><img src="{{ MEDIA_URL }}images/icons/arrow_copy.png" width="16" height="16" alt="">Copy{% if scraper.vault %} in Vault{% endif %}</a></li>
     <li class="viewsource"><!--[if !IE]> --><a href="view-source:{{MAIN_URL}}/editor/raw/{{ scraper.short_name }}" target="_blank" rel="nofollow">View Source</a><!-- <![endif]--><!-- [if IE]><a href="{{MAIN_URL}}/editor/raw/{{ scraper.short_name }}" target="_blank" rel="nofollow">View Source</a><![endif]--></li>
     <li class="share">
         <a><img src="{{ MEDIA_URL }}images/icons/share.png" width="16" height="16" alt="">Share</a>
@@ -258,11 +253,7 @@
         	        <li><a href="#privacy_status" title="This {{scraper.wiki_type|lower}} can be viewed by anyone, but edited only by its owner and listed contributors" rel="nofollow"><img src="{{ MEDIA_URL }}images/icons/shield-protected.png" width="16" height="16" />Protected</a></li>
                 {% endif %}
                 {% if scraper.privacy_status == 'private' %}
-                    {% if scraper.vault %}
-                    <li><a href="#privacy_status" title="This {{scraper.wiki_type|lower}} can only be viewed or edited by members of the vault &lsquo;{{ scraper.vault.name }}&rsquo;" rel="nofollow"><img src="{{ MEDIA_URL }}images/icons/shield-private.png" width="16" height="16" />In {% if scraper.vault.user.username == user.username %}your{% else %}{{scraper.vault.user.get_profile.name}}&rsquo;s{% endif %} vault</a></li>
-                    {% else %}
         	        <li><a href="#privacy_status" title="This {{scraper.wiki_type|lower}} can only be viewed or edited by its owner or listed contributors" rel="nofollow"><img src="{{ MEDIA_URL }}images/icons/shield-private.png" width="16" height="16" />Private</a></li>
-        	        {% endif %}
         	    {% endif %}
         	    <li><a href="#contributors" rel="nofollow">{{ scraper.usercoderole_set.count }} {% if scraper.privacy_status == 'public' %}contributor{% else %}editor{% endif %}{{ scraper.usercoderole_set.count|pluralize }}</a></li>
         	    <li class="clear"></li>
@@ -280,13 +271,8 @@
                     <p>Anyone can see this {{scraper.wiki_type}}, but only its {{ scraper.usercoderole_set.count }} selected editor{{ scraper.usercoderole_set.count|pluralize }} can edit it.</p>
                 {% endif %}
                 {% if scraper.privacy_status == 'private' %}
-                    {% if scraper.vault %}
-                        <h4>This {{scraper.wiki_type}} is in {% if scraper.vault.user.username == user.username %}your{% else %}{{scraper.vault.user.get_profile.name}}&rsquo;s{% endif %} vault</h4>
-            	        <p>It can only be seen or edited by the members of <a href="/vaults/#vault_{{scraper.vault.id}}" id="current_vault_link" title="This is {% if scraper.vault.user.username == user.username %}your{% else %}{{scraper.vault.user.get_profile.name}}&rsquo;s{% endif %} vault">{{ scraper.vault.name }}</a>.</p>
-            	    {% else %}
-            	        <h4>This {{scraper.wiki_type}} is private</h4>
-            	        <p>Only the {{ scraper.usercoderole_set.count }} selected editor{{ scraper.usercoderole_set.count|pluralize }} can see or edit this {{scraper.wiki_type}}.</p>
-            	    {% endif %}
+        	        <h4>This {{scraper.wiki_type}} is private</h4>
+        	        <p>Only the {{ scraper.usercoderole_set.count }} selected editor{{ scraper.usercoderole_set.count|pluralize }} can see or edit this {{scraper.wiki_type}}.</p>
                 {% endif %}
 
         	    {% if scraper.owner == request.user %}
@@ -313,32 +299,8 @@
                                 <td><h4><label for="privacy_private">{% if scraper.privacy_status == 'private' %}Keep as Private{% else %}Change to Private{% endif %} <span style="color:#999; font-weight: normal">({% if user.is_staff %}staff-only{% else %}deprecated{% endif %})</span></label></h4><p><label for="privacy_private">Only selected contributors {% if scraper.privacy_status == 'private' %}can{% else %}will be able to{% endif %} see or edit this {{scraper.wiki_type}}.</label></p></td>
                             </tr>
                             {% endif %}
-                            {% if request.user.vault_membership.count or user_plan != 'free' %}
-                            <tr>
-                                <td class="radio"><input type="radio" name="privacy_status" value="vault" id="privacy_vault"{% if scraper.vault %} checked="checked"{% endif %}{% if not request.user.vault_membership.count %} disabled="disabled"{% endif %} /></td>
-                                <td>
-                                    <h4><label for="privacy_vault">{% if scraper.vault %}Keep in a Vault{% else %}Move to a Vault{% endif %}</label></h4>
-                                    <p><label for="privacy_vault">Only vault members {% if scraper.vault %}can{% else %}will be able to{% endif %} <br/>see or edit this {{scraper.wiki_type}}.</label></p>
-                                    <p><select id="move_to_vault">
-                                        {% if scraper.vault %}{% else %}<option></option>{% endif %}
-                                        {% if not request.user.vault_membership.count %}<option disabled="disabled">Oh noes! You don't have a vault!</option>{% endif %}
-                                    {% for vault in request.user.vault_membership.all %}
-                                        <option  value="{% url vault_scrapers_add vault.id, scraper.short_name %}" {% if vault.id == scraper.vault.id %}selected="selected"{% endif %}>{{ vault.name }} ({% if vault.user.username == user.username %}your vault{% else %}{{vault.user.get_profile.name}}&rsquo;s vault{% endif %})</option>
-                                    {% endfor %}
-                                    </select> <input type="button" value="&rarr; Move!"/></p>
-                                </td>
-                            </tr>
-                        	{% else %}
-                            <tr class="premium">
-                                <td class="radio"><input type="radio" name="privacy_status" value="vault" id="privacy_vault" disabled="disabled" /></td>
-                                <td>
-                                    <h4><label for="privacy_vault">Move to a private vault</label></h4>
-                                    <p><label for="privacy_vault">Only people you select will be able to see or edit&nbsp;this&nbsp;{{scraper.wiki_type}}.</label></p>
-                                </td>
-                            </tr>
-                            {% endif %}
+
                         </table>
-                        {% if scraper.vault.id %}<input type="hidden" id="current_vault_id" value="{{scraper.vault.id}}" />{% endif %}
                         <input type="button" value="Save" id="saveprivacy">
                     </form>
                 {% endif %}
@@ -439,8 +401,8 @@
     <ul class="titlebar">
         <li class="first"><h3>{% if related_views or scraper.forked_from or forked_to_total or scraper_tags %}This scraper in context{% else %}This scraper is lonely{% endif %}</h3></li>
         {% if user_edits_it or user.is_staff %}<li class="tag"><a href="#tags" title="Use tags to organise and group similar scrapers"><img src="{{ MEDIA_URL }}images/icons/tag.png" width="16" height="16" alt="">Tag</a></li>{% endif %}
-        <li class="view"><a data-wiki_type="view" data-sourcescraper="{{scraper.short_name}}" {% if scraper.vault %}data-vault_id="{{scraper.vault.id}}" {% endif %}href="{% url choose_template 'view' %}?sourcescraper={{scraper.short_name}}" title="Create a new view using this scraper&rsquo;s data" rel="nofollow"><img src="{{ MEDIA_URL }}images/icons/chart.png" width="16" height="16" alt="">Visualise{% if scraper.vault %} in Vault{% endif %}</a></li>
-        <li class="copy"><a href="{% url editor scraper.wiki_type scraper.language %}{% if scraper.vault %}/tovault/{{scraper.vault.id}}/{% endif %}?fork={{scraper.short_name}}{% if scraper.vault %}&name={{scraper.short_name}}_copy{% endif %}" title="Create a new {{scraper.wiki_type}} with this {{scraper.wiki_type}}&rsquo;s code" rel="nofollow"><img src="{{ MEDIA_URL }}images/icons/arrow_copy.png" width="16" height="16" alt="">Copy{% if scraper.vault %} in Vault{% endif %}</a></li>
+        <li class="view"><a data-wiki_type="view" data-sourcescraper="{{scraper.short_name}}" href="{% url choose_template 'view' %}?sourcescraper={{scraper.short_name}}" title="Create a new view using this scraper&rsquo;s data" rel="nofollow"><img src="{{ MEDIA_URL }}images/icons/chart.png" width="16" height="16" alt="">Visualise</a></li>
+        <li class="copy"><a href="{% url editor scraper.wiki_type scraper.language %}?fork={{scraper.short_name}}" title="Create a new {{scraper.wiki_type}} with this {{scraper.wiki_type}}&rsquo;s code" rel="nofollow"><img src="{{ MEDIA_URL }}images/icons/arrow_copy.png" width="16" height="16" alt="">Copy</a></li>
         <li class="clear"></li>
     </ul>
 

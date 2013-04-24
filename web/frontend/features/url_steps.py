@@ -9,8 +9,6 @@ PAGES = {
         'sign up':                      '/login/',
         'contact':                      '/contact/',
         'help':                         '/help/',
-        'vaults':                       '/vaults/',
-        'new vault':                    '/vaults/new/',
         'python scraper code editing':  '/scrapers/new/python',
         'public request':               '/request_data/#public',
         'request':                      '/request_data/',

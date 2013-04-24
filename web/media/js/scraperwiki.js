@@ -67,18 +67,6 @@ function newCodeObject($a){
 			url += "&sourcescraper=" + $a.data('sourcescraper');
 		}
 
-		/*
-			NOTE:
-			This actually causes a problem, if someone tries to create a new View
-			(with a sourcescraper attribute) and then ALSO tries to save it into
-			a vault. They end up being taken to a url like:
-			/views/new/php?sourcescraper=ORIGINAL_SCRAPER/tovault/VAULT_ID/?name=NEW_VIEW
-			which doesn't work. The View isn't created in the vault. Instead, it's
-			created publically, and the sourcescraper name is taken to be:
-			"ORIGINAL_SCRAPER/tovault/VAULT_ID/?name=NEW_VIEW"
-			D'oh!!
-		*/
-
 		$.get(url, function(data){
 	        $.modal('<div id="template_popup">'+data+'</div>', {
 	            overlayClose: true,
@@ -91,52 +79,6 @@ function newCodeObject($a){
 				},
 				onShow: function(dialog){
 					$('#simplemodal-container').css('height', 'auto');
-					$('#chooser_vaults h2', dialog.data).bind('click', function(e){
-						if($(this).next().is(':visible')){
-							$(this).children('input').attr('checked', false);
-							$(this).nextAll('p').slideUp(250);
-						} else {
-							$(this).children('input').attr('checked', true);
-							$(this).nextAll('p').slideDown(250, function(){
-								$('#chooser_name_box').focus();
-							});
-						}
-					});
-					if($a.data('vault_id')){
-						$('#chooser_vaults h2', dialog.data).trigger('click');
-						$('select option[value$="/' + $a.data('vault_id') + '/"]', dialog.data).attr('selected', 'selected');
-					}
-					$('li a[href]', dialog.data).bind('click', function(e){
-						if( ! $('#chooser_vaults h2 input').is(":visible")  ) {
-							return;
-						}
-
-						if ( ! $('#chooser_vaults h2 input').is(":checked") ) {
-							return;
-						}
-
-						e.preventDefault();
-						if($('#chooser_vaults h2 input', dialog.data).is(':checked')){
-							if($('#chooser_name_box', dialog.data).val() == ''){
-								$('span.warning', dialog.data).remove();
-								text = $('label', dialog.data).attr('title');
-								$('#chooser_vaults p', dialog.data).eq(0).addClass('error').append('<span class="warning"><span></span>' + text + '</span>');
-								$('#chooser_name_box', dialog.data).bind('keyup', function(){
-									$('#chooser_vaults p.error', dialog.data).removeClass('error').children('span').remove();
-									$(this).unbind('keyup');
-								})
-							} else {
-								$(this).addClass('active');
-								var u = $('#chooser_vault').val();
-								u = u.replace('/python/', '/' + $(this).attr('href').replace(/^.+\/new\/(php|python|ruby|html)/g, '$1') + '/');
-								u += '?name=' + encodeURIComponent($('#chooser_name_box').val())
-								if($a.data('sourcescraper')){
-								    u += '&sourcescraper=' + $a.data('sourcescraper');
-								}
-                                location.href = u;
-							}
-						}
-					});
 				},
 				onClose: function(dialog) {
 					dialog.container.fadeOut(200);
@@ -270,7 +212,7 @@ $(function(){
     var urls = {
         '/(about|events|contact)/' : 'about',
         '/status/' : 'admin',
-        '/(profiles|vaults)/' : 'user',
+        '/profiles/' : 'user',
         '/login/' : 'login',
         '.*' : 'code'
     }
@@ -336,7 +278,7 @@ $(function(){
         }
     }, 500);
 
-    $('a.editor_view, div.network .view a, a.editor_scraper, a.add_to_vault ').click(function(e) {
+    $('a.editor_view, div.network .view a, a.editor_scraper').click(function(e) {
 		e.preventDefault();
 		newCodeObject($(this));
     });
@@ -351,170 +293,15 @@ $(function(){
 
 	$('#fourohfoursearch').val($('body').attr('class').replace("scrapers ", "").replace("views ", "").replace(" fourohfour", ""));
 
-	$('body.vaults div.vault').each(function(){
-	    id = $(this).attr('id');
-	    if(location.hash == '#' + id){
-	        $(this).addClass('highlighted');
-	    } else {
-    	    if($.cookie('hide_' + id)){
-    	        $(this).children('.vault_header').addClass('collapsed').nextAll().hide();
-    	    }
-	    }
-	});
-
-	$('body.vaults div.vault_header h3').bind('click', function(e){
-	    $h = $(this).parent();
-	    id = $h.parent().attr('id');
-	    if( $h.is('.collapsed') ){
-	        $.cookie("hide_" + id, null, { path: '/' });
-	        $h.removeClass('collapsed').nextAll().slideDown();
-	    } else {
-	        $.cookie("hide_" + id, "1", { path: '/', expires: 30 });
-	        $h.nextAll().slideUp(function(){
-	            $h.addClass('collapsed');
-	        });
-	    }
-	});
-
-	$('div.vault_users_popover').each(function(i,el){
-		//	This centres the Users Popover underneath the Users toolbar button
-		var popo = $(this);
-		var link = $(this).prevAll('.vault_users');
-		var anchor = link.position().left + (0.5 * link.outerWidth());
-		popo.css('left', anchor - (popo.outerWidth() / 2) );
-	});
-
 	function clean_up_users_popover($popover){
 		$popover.filter(':visible').fadeOut(400, function(){
 			$('li.error', $popover).remove();
 			$('a.add_user', $popover).show();
 			$('.new_user', $popover).hide().find('input:text').val('');
 		});
-		$popover.siblings('a.vault_users').removeClass('hover');
 		$('html').unbind('click');
 	}
 
-	$('body.vaults a.vault_users').bind('click', function(e){
-		var $a = $(this).addClass('hover');
-		var $p = $a.siblings('div.vault_users_popover');
-		if($p.is(':visible')){
-			clean_up_users_popover($p);
-		} else {
-			$p.fadeIn(150, function(e) {
-                $('html').bind('click', function(e){
-                    if( $(e.target).parents().index($a) == -1 &&
-                        $(e.target).parents().index($p) == -1 &&
-                        $(e.target).parents().index($('.ui-autocomplete')) == -1 &&
-                        $(e.target).not('[class*="ui-"]').length) {
-                            // they didn't click on the users link or the popover or the autocomplete
-                            clean_up_users_popover($p);
-                    }
-    			});
-    		});
-        }
-	});
-
-	$('body.vaults a.add_user').bind('click', function(){
-		$(this).slideUp(250).next().slideDown(250).find('.username').focus();
-	});
-
-	$('body.vaults .new_user > a').bind('click', function(){
-		var closure = $(this).parents('div.vault_users_popover');
-		$('.error', closure).slideUp(150);
-		var username = $('.username', closure).val();
-		var vault_id = $('a.add_user', closure).attr('rel');
-		var url = '/vaults/' + vault_id + '/adduser/' + username + '/';
-		$.getJSON(url, function(data) {
-			if(data.status == 'ok'){
-				$('.username', closure).autocomplete("close");
-				$('ul', closure).append(data.fragment).next('a').delay(50).slideDown(150);
-				closure.updateUserCount();
-			} else if(data.status == 'fail'){
-				$('ul', closure).append('<li class="message error">' + data.error + '</li>');
-				$('.username', closure).autocomplete("close");
-			} else if(data.status == 'invited'){
-				$('ul', closure).append('<li class="message invite">' + data.message + '</li>');
-				$('.username', closure).autocomplete("close");
-                $('input.username').val('');
-			}
-		});
-	});
-
-    $('body.vaults .new_user input.username').bind('keydown', function(e){
-		// handle Enter/Return key as a click on the Add button
-		if((e.keyCode || e.which) == 13){
-			$(this).next('a').trigger('click');
-		}
-	}).autocomplete({
-		minLength: 2,
-		source: function( request, response ) {
-			$.ajax({
-				url: $('#id_api_base').val() + "scraper/usersearch",
-				dataType: "jsonp",
-				data: {
-					format:"jsondict",
-					maxrows:10,
-					searchquery:request.term
-				},
-				success: function( data ) {
-					response( $.map( data, function( item ) {
-						return {
-							label: item.profilename + ' (' + item.username + ')',
-							value: item.username
-						}
-					}));
-				}
-			});
-		},
-		select: function( event, ui ) {
-			//	submit the name
-			//	$(this).next('a').trigger('click');
-		}
-	});
-
-	$('body.vaults a.user_delete').live('click', function(e){
-		e.preventDefault();
-		var url = $(this).attr('href');
-		var closure = $(this);
-		$.ajax({
-			url: url,
-			dataType: 'json',
-			success: function(data) {
-				if(data.status == 'ok'){
-					closure.updateUserCount(-1).parent().slideUp(function(){
-						$(this).remove();
-					});
-				} else if(data.status == 'fail'){
-					closure.parents('ul').append('<li class="message error">Error: ' + data.error + '</li>');
-				}
-			},
-			error: function(data){
-				closure.parents('ul').append('<li class="message error">Sorry, couldn&rsquo;t remove user</li>');
-			}
-		});
-	});
-
-	jQuery.fn.updateUserCount = function(increment) {
-        // *increment* is optional, defaults to 0.
-		//	Must be called from an element within <div class="vault_header"></div>
-        increment = increment|0;
-		return this.each(function() {
-		    var $el = $(this);
-			var number_of_users = Number($el.parents('.vault_header').find('.vault_users_popover li').not('.new_user_li').length) + increment;
-			if(number_of_users == 1){
-				x_users = '1 member';
-			} else {
-				x_users = number_of_users + ' members';
-			}
-			$el.parents('.vault_header').find('.x_users').text(x_users);
-		});
-	}
-
-	$('body.vaults .transfer_ownership a').bind('click', function(e){
-		e.preventDefault();
-		$(this).next('span').show().children(':text').focus();
-		$('span', this).show();
-	});
 
 	$('body.vaults .transfer_ownership input:text').autocomplete({
 		minLength: 2,

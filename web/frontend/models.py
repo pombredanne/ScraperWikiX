@@ -37,7 +37,7 @@ class UserProfile(models.Model):
     """
     This model holds the additional fields to be associated with a user in the
     system
-    
+
     Note, where any other model wishes to link to a user or reference a user,
     they should link to the user profile (this class), rather than directly to
     the user. this ensures that if we wish to change the definition of user,
@@ -59,24 +59,24 @@ class UserProfile(models.Model):
     # The user's payment plan.
     plan             = models.CharField(max_length=64,
       choices=plan_choices, default='free')
-    
+
     features         = models.ManyToManyField( "Feature", related_name='features', null=True, blank=True )
-    
+
     messages = models.BooleanField( default=False )
-        
+
     objects = models.Manager()
-    
+
     def has_feature(self, fname):
-        """ 
-            Returns true if this profile has a feature connected with 
-            the specified name 
+        """
+            Returns true if this profile has a feature connected with
+            the specified name
             Use it something like this: request.user.get_profile().has_feature('xxx')
         """
         return self.features.filter(name=fname).count() > 0
-    
+
     def possible_feature_count(self):
         return Feature.objects.filter(public=True).count()
-    
+
     def regenerate_apikey(self):
         import uuid
         self.apikey = str( uuid.uuid4() )
@@ -84,7 +84,7 @@ class UserProfile(models.Model):
     def save(self):
         if not self.apikey:
             self.regenerate_apikey()
-        
+
         #do the parent save
         super(UserProfile, self).save()
 
@@ -92,16 +92,16 @@ class UserProfile(models.Model):
         if self.name and self.name != '':
             return self.name
         return self.user.username
-    
+
     def __unicode__(self):
         return unicode(self.user)
 
     class Meta:
         ordering = ('-created_at',)
-    
+
     def get_absolute_url(self):
         return ('profile', (), { 'username': self.user.username })
-    get_absolute_url = models.permalink(get_absolute_url)        
+    get_absolute_url = models.permalink(get_absolute_url)
 
     def change_plan(self, plan):
         """Change the user's payment plan.  For example, upgrading them when
@@ -115,24 +115,8 @@ class UserProfile(models.Model):
 
         self.plan = plan
         self.save()
-    
-    def create_vault(self, name):
-        """Create a Vault.  Checks that the user is authorised to do so;
-        raises an Exception if not.
-        """
 
-        from codewiki.models import Vault
 
-        valid_for_vault = dict(self.plan_choices).keys()
-        valid_for_vault.remove('free')
-
-        if self.plan not in valid_for_vault:
-            raise PermissionDenied
-        vault = Vault(user=self.user, name=name, plan=self.plan)
-        vault.save()
-        vault.members.add(self.user)
-        return vault
-    
     # sorts against what the current user can see and what the identity of the profiled_user
     def owned_code_objects(self, user):
         from codewiki.models import scraper_search_query

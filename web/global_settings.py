@@ -99,7 +99,6 @@ TEMPLATE_CONTEXT_PROCESSORS = [
   'django_notify.context_processors.notifications',
   'frontend.context_processors.site',
   'frontend.context_processors.template_settings',
-  'frontend.context_processors.vault_info',
   # 'frontend.context_processors.site_messages', # disabled as not used since design revamp April 2011
 ]
 
@@ -111,9 +110,7 @@ SCRAPERWIKI_APPS = [
     'cropper',
     'kpi',
     'documentation',
-    'recuro',
     #'devserver',
-    'alerts',
     'froth',
 ]
 

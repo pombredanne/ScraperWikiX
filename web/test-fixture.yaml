@@ -1,5 +1,5 @@
 # Session
-- fields: 
+- fields:
     expire_date: 2012-02-29 16:35:22
     session_data: |
       NmQ1ODQ1NTU1NTU4MDY3NTQ3ZGVmYTM4MTk1OGUyNjEwMjk5MmRkNTqAAn1xAShVEl9hdXRoX3Vz
@@ -9,7 +9,7 @@
   pk: 588c189e47a6799773e2c667c7917453
 
 # User
-- fields: 
+- fields:
     date_joined: 2012-02-15 16:41:17
     email: test@example.com
     first_name: ""
@@ -25,7 +25,7 @@
   model: auth.user
   pk: 1
 
-- fields: 
+- fields:
     date_joined: 2012-03-04 08:35:59
     email: test+subject@example.com
     first_name: ""
@@ -42,10 +42,10 @@
   pk: 2
 
 # User profile
-- fields: 
+- fields:
     apikey: 5b7e6c1b-cfab-4485-bda0-8b00bdd7b2ea
     beta_user: false
-    bio: 
+    bio:
     created_at: 2012-02-15 17:15:23
     features: []
     messages: false
@@ -55,10 +55,10 @@
   model: frontend.userprofile
   pk: 1
 
-- fields: 
+- fields:
     apikey: b57e6c1b-cfab-4485-bda0-8b00bdd7b2ae
     beta_user: false
-    bio: 
+    bio:
     created_at: 2012-02-15 17:15:23
     features: []
     messages: false
@@ -69,30 +69,29 @@
   pk: 2
 
 # Code
-- fields: 
-    access_apikey: 
+- fields:
+    access_apikey:
     created_at: 2012-02-15 16:38:27
     description: ""
     featured: false
-    forked_from: 
+    forked_from:
     guid: baa90e3290db2d13bcf8f2bc403b70d0
     has_screen_shot: false
     istutorial: false
     language: python
     line_count: 4
-    previous_privacy: 
+    previous_privacy:
     privacy_status: public
     relations: []
     short_name: test_scraper
     status: ok
     title: Test Scraper
-    vault: 
     wiki_type: scraper
   model: codewiki.code
   pk: 1
 
 # User code role
-- fields: 
+- fields:
     code: 1
     role: owner
     user: 1
@@ -100,8 +99,8 @@
   pk: 1
 
 # Scraper
-- fields: 
-    last_run: 
+- fields:
+    last_run:
     record_count: 0
     relations: []
     run_interval: -1
@@ -109,50 +108,25 @@
   pk: 1
 
 # Code in vault
-- fields: 
-    access_apikey: 
+- fields:
+    access_apikey:
     created_at: 2012-04-15 16:38:27
     description: ""
     featured: false
-    forked_from: 
+    forked_from:
     guid: caa91e3290db2d13bcf8f2bc403b70d0
     has_screen_shot: false
     istutorial: false
     language: python
     line_count: 4
-    previous_privacy: 
+    previous_privacy:
     privacy_status: public
     relations: []
     short_name: vault_scraper
     status: ok
     title: Vault scraper
-    vault: 1
     wiki_type: scraper
   model: codewiki.code
   pk: 2
 
-# Vault
-- fields:
-    id: 1
-    user: 2
-    name: Prefab Vault
-    plan: individual
-  model: codewiki.vault
-  pk: 1
 
-# User code role for vault scraper
-- fields: 
-    code: 2
-    role: owner
-    user: 1
-  model: codewiki.usercoderole
-  pk: 2
-
-# Scraper in vault
-- fields: 
-    last_run: 
-    record_count: 0
-    relations: []
-    run_interval: -1
-  model: codewiki.scraper
-  pk: 2

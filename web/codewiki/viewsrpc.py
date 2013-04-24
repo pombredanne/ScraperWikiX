@@ -10,7 +10,6 @@ from django.conf import settings
 
 
 from codewiki.models.code import MAGIC_RUN_INTERVAL
-from codewiki.models.vault import VaultRecord
 from codewiki import runsockettotwister
 from codewiki import models
 
@@ -261,9 +260,6 @@ def Dtwistermakesrunevent(request):
     event.first_url_scraped = request.POST.get("first_url_scraped", "")
     event.exception_message = request.POST.get("exception_message", "")
     event.run_ended = datetime.datetime.now()   # last update time
-
-    if event.scraper.vault:
-        VaultRecord.update(vault=event.scraper.vault, count=event.pages_scraped )
 
     # run finished case
     if request.POST.get("exitstatus"):

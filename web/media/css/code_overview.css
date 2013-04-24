@@ -1,4 +1,4 @@
-/* @override 
+/* @override
 	http://localhost:8000/media/css/code_overview.css
 	https://devmedia.scraperwiki.com/css/code_overview.css
 */
@@ -68,7 +68,7 @@
 	position: relative;
 }
 
-#scraper_contributors img.vault_owner_flash {
+#scraper_contributors  {
 	position: absolute;
 	top: -1px;
 	right: -1px;
@@ -208,8 +208,8 @@ border-top: navajowhite;
 }
 
 
-#addneweditor .addbutton, #addneweditor .cancelbutton, 
-#addnewattachable .addbutton, #addnewattachable .cancelbutton 
+#addneweditor .addbutton, #addneweditor .cancelbutton,
+#addnewattachable .addbutton, #addnewattachable .cancelbutton
 {
 	float: right;
 	margin-left: 10px;
@@ -263,14 +263,6 @@ border-top: navajowhite;
 	font-size: 14px;
 }
 
-#current_vault_link {
-	padding: 3px 4px 1px 4px;
-	margin: 0 -3px;
-}
-
-
-
-
 #add_view_to_site {
 	margin-top: 40px;
 	margin-bottom: -20px;
@@ -307,8 +299,8 @@ border-top: navajowhite;
 	font-size: 14px;
 	outline: none;
 	background: transparent url(../images/icons/clipboard.png) 5px 4px no-repeat;
-	-webkit-border-radius: 4px; 
-	-moz-border-radius: 4px; 
+	-webkit-border-radius: 4px;
+	-moz-border-radius: 4px;
 	border-radius: 4px;
 	border: 1px solid #87BEE3;
 	font-weight: normal;
@@ -1393,11 +1385,6 @@ ul.buttons li a.selected:hover {
 	padding-right: 5px;
 }
 
-#current_vault_link {
-	padding: 0;
-	margin: 0;
-}
-
 #privacy_status_form .premium {
 	background-color: rgba(255,255,255,0.4);
 	border: 1px solid #ccc;
@@ -1476,7 +1463,7 @@ ul.buttons li a.selected:hover {
 }
 
 #contributors a:hover {
-	text-decoration: none;	
+	text-decoration: none;
 }
 
 #contributors .gravatar {
@@ -1486,12 +1473,6 @@ ul.buttons li a.selected:hover {
     background-color: #999;
     vertical-align: -6px;
     margin: 0 5px 0 0;
-}
-
-#contributors img.vault_owner_flash {
-	position: absolute;
-	top: -1px;
-	right: -1px;
 }
 
 #contributors input.demotebutton {
@@ -1693,7 +1674,7 @@ box-shadow: 0px 2px 4px rgba(0,0,0,0.3);
 }
 
 .dataTables_length {
-	
+
 }
 
 .dataTables_filter {

@@ -23,10 +23,10 @@ except:
 class View(code.Code):
     def __init__(self, *args, **kwargs):
         super(View, self).__init__(*args, **kwargs)
-        self.wiki_type = 'view'        
+        self.wiki_type = 'view'
 
     def save(self, *args, **kwargs):
-        first_save = not self.id 
+        first_save = not self.id
 
         super(View, self).save(*args, **kwargs)
 
@@ -37,10 +37,6 @@ class View(code.Code):
 
     def get_screenshot_url(self, url_prefix):
         url = '%s%s' % (url_prefix, reverse('rpcexecute', args=[self.short_name]))
-        # Make the screenshots work in a vault.
-        # XXX Can't enable this yet for privacy reasons. Will have to have a
-        # hash in screenshot names or have Django check their privileges or
-        # something.
         #if self.access_apikey:
         #    url += "?apikey=" + self.access_apikey
         return url

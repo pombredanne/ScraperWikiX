@@ -12,14 +12,13 @@ from django.conf import settings
 from django.db.models import Q
 from django.core.mail import send_mail
 from django.contrib.sites.models import Site
-from django.core.urlresolvers import reverse                
+from django.core.urlresolvers import reverse
 
 import tagging
 import hashlib
 
 from codewiki import vc
 from codewiki import util
-from codewiki.models.vault import Vault
 from frontend.models import UserProfile
 import textile   # yuk
 import creoleparser  # creoleparser.text2html(cdesc); method may include pre and post processing of text to handle links and paramstrings encoding nicely
@@ -44,14 +43,14 @@ LANGUAGES = [ (k,v) for k,v in LANGUAGES_DICT.iteritems() ]
 # used for new scraper/view dialogs
 # Add "javascript" to enable Javascript
 SCRAPER_LANGUAGES = [ (k, LANGUAGES_DICT[k]) for  k in ["python", "ruby", "php" ] ]
-SCRAPER_LANGUAGES_V = [ '2.7.1', '1.9.2', '5.3.5', ''] 
+SCRAPER_LANGUAGES_V = [ '2.7.1', '1.9.2', '5.3.5', '']
 
 VIEW_LANGUAGES = [ (k, LANGUAGES_DICT[k]) for  k in ["python", "ruby", "php", "html"] ]
 HELP_LANGUAGES = [ (k, LANGUAGES_DICT[k]) for  k in ["python", "ruby", "php"] ]
 
 WIKI_TYPES = (
     ('scraper', 'Scraper'),
-    ('view', 'View'),    
+    ('view', 'View'),
 )
 
 PRIVACY_STATUSES = (
@@ -78,22 +77,22 @@ def scraper_search_query_unordered(user, query, apikey=None):
     else:
         scrapers_all = Code.objects
     scrapers_all = scrapers_all.exclude(privacy_status="deleted")
-    
+
     u = user
     if apikey:
-        # If we have an API key then we should look up the userprofile and 
+        # If we have an API key then we should look up the userprofile and
         # use that user instead of the one supplied
         try:
             u = UserProfile.objects.get(apikey=apikey).user
         except UserProfile.DoesNotExist:
             u = None
-    
+
     if u and not u.is_anonymous():
         scrapers_all = scrapers_all.exclude(Q(privacy_status="private") & ~(Q(usercoderole__user=u) & Q(usercoderole__role='owner')) & ~(Q(usercoderole__user=u) & Q(usercoderole__role='editor')))
     else:
         scrapers_all = scrapers_all.exclude(privacy_status="private")
     return scrapers_all
-        
+
 def scraper_search_query(user, query, apikey=None):
     scrapers_all = scraper_search_query_unordered(user, query, apikey=None)
     scrapers_all = scrapers_all.order_by('-created_at')
@@ -122,32 +121,29 @@ class Code(models.Model):
     status             = models.CharField(max_length=10, blank=True, default='ok')   # "sick", "ok"
     users              = models.ManyToManyField(User, through='UserCodeRole')
     guid               = models.CharField(max_length=1000)
-    line_count         = models.IntegerField(default=0)    
+    line_count         = models.IntegerField(default=0)
     featured           = models.BooleanField(default=False)
     istutorial         = models.BooleanField(default=False)
     language           = models.CharField(max_length=32, choices=LANGUAGES,  default='python')
-    wiki_type          = models.CharField(max_length=32, choices=WIKI_TYPES, default='scraper')    
+    wiki_type          = models.CharField(max_length=32, choices=WIKI_TYPES, default='scraper')
     relations          = models.ManyToManyField("self", blank=True)  # manage.py refuses to generate the tabel for this, so you haev to do it manually.
     forked_from        = models.ForeignKey('self', null=True, blank=True)
     privacy_status     = models.CharField(max_length=32, choices=PRIVACY_STATUSES, default='public')
     previous_privacy   = models.CharField(max_length=32, choices=PRIVACY_STATUSES, null=True, blank=True)
     has_screen_shot    = models.BooleanField( default=False )
-    
+
     # For private scrapers this can be provided to API calls as proof that the caller has access
-    # to the scraper, it is really a shared secret between us and the caller. For the datastore 
-    # API call it will only be used to verify access to the main DB, not the attached as that is 
-    # done through the existing code permissions model.  
+    # to the scraper, it is really a shared secret between us and the caller. For the datastore
+    # API call it will only be used to verify access to the main DB, not the attached as that is
+    # done through the existing code permissions model.
     # This should be regeneratable on demand by any editor/owner of the scraper (if it is private)
     access_apikey = models.CharField(max_length=64, blank=True, null=True)
-    
-    # Each code object can be contained in a vault, and a reference to that vault is maintained
-    # here
-    vault = models.ForeignKey( Vault, related_name='code_objects', null=True, blank=True, on_delete=models.SET_NULL )
+
 
     def __init__(self, *args, **kwargs):
         super(Code, self).__init__(*args, **kwargs)
         if not self.created_at:
-            self.created_at = datetime.datetime.today()  
+            self.created_at = datetime.datetime.today()
 
     def save(self, *args, **kwargs):
         # Check type and apikey and generate one if necessary
@@ -161,7 +157,7 @@ class Code(models.Model):
             self.set_guid()
 
         super(Code, self).save(*args, **kwargs)
-    
+
     def __unicode__(self):
         return self.short_name
 
@@ -212,8 +208,8 @@ class Code(models.Model):
 
     def set_guid(self):
         self.guid = hashlib.md5("%s" % ("**@@@".join([self.short_name, str(time.mktime(self.created_at.timetuple()))]))).hexdigest()
-     
-        
+
+
         # it would be handy to get rid of this function
     def owner(self):
         if self.pk:
@@ -237,22 +233,22 @@ class Code(models.Model):
     # could filter for the private scrapers which this user is allowed to see!
     def attachfrom_scrapers(self):
         return [ cp.code  for cp in CodePermission.objects.filter(permitted_object=self).all()  if cp.permitted_object.privacy_status not in ["deleted", "private"] ]
-        
+
 
     def add_user_role(self, user, role='owner'):
         """
         Method to add a user as either an editor or an owner to a scraper/view.
-  
+
         - `user`: a django.contrib.auth.User object
         - `role`: String, either 'owner' or 'editor'
-        
+
         Valid role are:
           * "owner"
           * "editor"
           * "follow"
           * "requester"
           * "email"
-        
+
         """
 
         valid_roles = ['owner', 'editor', 'follow', 'requester', 'email']
@@ -262,9 +258,9 @@ class Code(models.Model):
               %s
               """ % (role, ", ".join(valid_roles)))
 
-        #check if role exists before adding 
-        u, created = UserCodeRole.objects.get_or_create(user=user, 
-                                                           code=self, 
+        #check if role exists before adding
+        u, created = UserCodeRole.objects.get_or_create(user=user,
+                                                           code=self,
                                                            role=role)
 
     # should eventually replace add_user_role
@@ -281,13 +277,13 @@ class Code(models.Model):
                     euserrole = userrole
             elif userrole.role in ['owner', 'editor', 'follow'] and role in ['owner', 'editor', 'follow']:
                 userrole.delete()
-        
+
         if not euserrole and not remove:
             euserrole = UserCodeRole(code=self, user=user, role=role)
             euserrole.save()
         return euserrole
-        
-    
+
+
     # uses lists of users rather than userroles so that you can test containment easily
     def userrolemap(self):
         result = { "editor":[], "owner":[]}
@@ -296,7 +292,7 @@ class Code(models.Model):
                 result[usercoderole.role] = [ ]
             result[usercoderole.role].append(usercoderole.user)
         return result
-    
+
 
 
     def saved_code(self, revision = None):
@@ -311,15 +307,15 @@ class Code(models.Model):
 
     def get_absolute_url(self):
         from django.contrib.sites.models import Site
-        from django.core.urlresolvers import reverse        
-        
+        from django.core.urlresolvers import reverse
+
         current_site = Site.objects.get_current()
         r = reverse('code_overview', kwargs={'wiki_type':self.wiki_type, 'short_name':self.short_name})
         url = 'https://%s%s' % (current_site.domain,r,)
         return url
 
 
-    # update scraper meta data (lines of code etc)    
+    # update scraper meta data (lines of code etc)
     def update_meta(self):
         pass
 
@@ -335,14 +331,14 @@ class Code(models.Model):
         return os.path.join(settings.SCREENSHOT_DIR, size, filename)
 
     def screenshot_url(self, size='medium'):
-        from django.conf import settings        
+        from django.conf import settings
 
         if self.has_screenshot(size):
             url = settings.MEDIA_URL + 'screenshots/' + size + '/' + self.get_screenshot_filename(size=size)
         else:
             url = settings.MEDIA_URL + 'images/testcard_' + size + '.png'
         return url
-        
+
     def has_screenshot(self, size='medium'):
         has =  os.path.exists(self.get_screenshot_filepath(size))
         if has and not self.has_screen_shot:
@@ -373,15 +369,15 @@ class Code(models.Model):
             text = cdesc
         return text
 
-        
+
 
     def description_safepart(self):   # used in the api output
         cdesc = re.sub('(?s)__BEGIN_QSENVVARS__.*?__END_QSENVVARS__', '', self.description)
         cdesc = re.sub('(?s)__BEGIN_ENVVARS__.*?__END_ENVVARS__', '', cdesc)
-        return cdesc 
-        
-    # You can encode the query string as individual elements, or as one block.  
-    # If controller/node can drop in environment variables directly, then we can consider a general purpose adding of 
+        return cdesc
+
+    # You can encode the query string as individual elements, or as one block.
+    # If controller/node can drop in environment variables directly, then we can consider a general purpose adding of
     # such environment variables not through the QUERY_STRING interface which requires decoding in the scraper.
     # Would be more traditional to obtain the values as os.getenv("TWITTER_API_KEY") than dict(cgi.parse_qsl(os.getenv("QUERY_STRING")))["TWITTER_API_KEY"]
     def description_envvars(self):
@@ -413,36 +409,36 @@ class Code(models.Model):
         else:
             roles = [ ]
         #print "Code.actionauthorized AUTH", (action, user, roles, self.privacy_status)
-        
+
         # roles are: "owner", "editor", "follow", "requester", "email"
         # privacy_status: "public", "visible", "private", "deleted"
         if self.privacy_status == "deleted":
             return False
-            
+
         # extra type control condition
         if action == "rpcexecute" and self.wiki_type != "view":
             return False
-        
+
         if action in STAFF_ACTIONS:
             return user.is_staff
-            
-        if user.is_staff and action in STAFF_EXTRA_ACTIONS:  
+
+        if user.is_staff and action in STAFF_EXTRA_ACTIONS:
             return True
-        
+
         if action in CREATOR_ACTIONS:
             return "owner" in roles
-        
+
         if action in EDITOR_ACTIONS:
             if self.privacy_status == "public":
                 return user.is_authenticated()
-                
+
             return "editor" in roles or "owner" in roles
-        
+
         if action in VISIBLE_ACTIONS:
             if self.privacy_status == "private":
                 return "editor" in roles or "owner" in roles
             return True
-                
+
         assert False, ("unknown action", action)
         return True
 
@@ -470,9 +466,9 @@ class Code(models.Model):
             return all([ self.access_apikey, apikey, self.access_apikey == apikey ])
         return True
 
-    
+
     # tags have been unhelpfully attached to the scraper and view classes rather than the base code class
-    # we can minimize the damage caused by this decision (in terms of forcing the scraper/view code to be 
+    # we can minimize the damage caused by this decision (in terms of forcing the scraper/view code to be
     # unnecessarily separate by filtering as much of this application as possible through this interface
     def gettags(self):
         if self.wiki_type == "scraper":
@@ -490,23 +486,23 @@ class Code(models.Model):
         return self.short_name[-8:] == '.emailer'
 
 
-# I think this is another of those things that could be saved into the mercurial docs field 
+# I think this is another of those things that could be saved into the mercurial docs field
 # (as a query_string itself) so we can use the history and editing permissions all there.
 # would considerably simplify the situation
 class CodeSetting(models.Model):
     """
     A single key=value setting for a scraper/view that is editable for that
     view/scraper by the owner (or editor). There will be several (potentially)
-    of these per scraper/view that are only visible to owners and editors where 
+    of these per scraper/view that are only visible to owners and editors where
     the scraper/view is private/protected.
-    
+
     It is passed through the system with the code when executed and so will
     be available within the scraper code via an internal api setting - such
     as scraperwiki.setting('name')
 
-    
-    Records the user who last saved the setting (and when) so that there is 
-    a minimal amount of auditing available.  
+
+    Records the user who last saved the setting (and when) so that there is
+    a minimal amount of auditing available.
     """
     code  = models.ForeignKey(Code, related_name='settings')
     key   = models.CharField(max_length=100)
@@ -529,15 +525,15 @@ class CodePermission(models.Model):
     A uni-directional permission to read/write to a particular scraper/view
     for another scraper/view.
     """
-    code = models.ForeignKey(Code, related_name='permissions')    
+    code = models.ForeignKey(Code, related_name='permissions')
     permitted_object = models.ForeignKey(Code, related_name='permitted')    # should call this permitted_code so we don't assume is untyped
-    
+
     def __unicode__(self):
         return u'%s CANATTACHTO %s' % (self.code.short_name, self.permitted_object.short_name,)
 
     class Meta:
         app_label = 'codewiki'
-    
+
 
 class UserCodeRole(models.Model):
     user    = models.ForeignKey(User)

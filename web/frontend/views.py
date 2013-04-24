@@ -25,7 +25,7 @@ from django.core.mail import EmailMultiAlternatives
 from tagging.models import Tag, TaggedItem
 from tagging.utils import get_tag, calculate_cloud, get_tag_list, LOGARITHMIC, get_queryset_and_model
 
-from codewiki.models import Code, UserCodeRole, Scraper, Vault, View, scraper_search_query, user_search_query, HELP_LANGUAGES, LANGUAGES_DICT, Invite
+from codewiki.models import (Code, UserCodeRole, Scraper, View, scraper_search_query, user_search_query, HELP_LANGUAGES, LANGUAGES_DICT)
 from django.db.models import Q
 from frontend.forms import CreateAccountForm, UserMessageForm
 from registration.backends import get_backend
@@ -43,8 +43,6 @@ import itertools
 import json
 import random
 
-import recurly
-recurly.js.PRIVATE_KEY = settings.RECURLY_PRIVATE_KEY
 
 from utilities import location
 
@@ -168,10 +166,6 @@ def login(request):
                 backend = get_backend(settings.REGISTRATION_BACKEND)
                 new_user = backend.register(request, **registration_form.cleaned_data)
 
-                # Check for any invitations.
-                r = handle_signup_invites(new_user)
-                if r:
-                    redirect = r
 
                 #sign straight in
                 signed_in_user = auth.authenticate(username=request.POST['username'], password=request.POST['password1'])
@@ -190,47 +184,10 @@ def login(request):
                'redirect': redirect,
                }
 
-    # Add token as hidden field
-    if request.GET.has_key('t') or request.POST.has_key('token'):
-        token = request.GET.get('t', None) or request.POST.get('token', None)
-        # Will error if token is invalid.
-        invite = Invite.objects.get(token=token)
-        context['invite'] = invite
-        context['registration_form'].initial = {'email':invite.email}
-
     return render_to_response('registration/extended_login.html',
       context, context_instance = RequestContext(request))
 
-def handle_signup_invites(user):
-    """Handle any outstanding invites for a user (that has just
-    signed up).  For each invite, we add to vault and email
-    owner."""
 
-    invites = Invite.objects.filter(email=user.email)
-    # Freeze the list of invites, so we can in two passes edit
-    # the model, then send all the emails.
-    invites = list(invites)
-
-    for invite in invites:
-        invite.vault.members.add(user)
-        invite.vault.add_user_rights(user)
-        # Invitation used up; delete it.
-        invite.delete()
-
-    # We have a separate loop for sending emails because
-    # we don't mind so much if the email fails - at least
-    # the user has been added to the vault(s).
-    for invite in invites:
-        message = render_to_string('emails/invitation_accepted.txt', locals())
-        django.core.mail.send_mail(
-            subject='%s has accepted your invitation to %s' % (invite.email, invite.vault.name),
-            message=message,
-            from_email='Vault Notification <noreply@scraperwiki.com>',
-            recipient_list=[invite.vault.user.email],
-            fail_silently=False)
-
-    if invites:
-        return reverse('vault')
 
 def help(request, mode=None, language=None):
     tutorials = {}
@@ -475,255 +432,4 @@ def user_profile_from_account_code(account_code):
 
 def test_error(request):
     raise Exception('failed in test_error')
-
-
-
-###############################################################################
-# Vault specific views
-###############################################################################
-
-maximum_vaults = {'free': 0, 'individual': 1, 'business': 5, 'corporate': 9999}
-
-@login_required
-def new_vault(request):
-    profile = request.user.get_profile()
-    plan = request.user.get_profile().plan
-    vaults = Vault.objects.filter(user=profile.user)
-    maximum = maximum_vaults[plan]
-    if len(vaults) < maximum:
-        profile.create_vault('My New Vault')
-        return redirect('vault')
-    else:
-        return HttpResponseForbidden("You can't create a new vault. Please upgrade your ScraperWiki account.")
-
-@login_required
-def transfer_vault(request, vaultid, username):
-    """
-    When called by the owner of a vault, the ownership of the vault
-    can be transfered to another account (whether they are currently a member or not).
-
-    Once complete the access rights on all of the scrapers should also be
-    """
-    mime = 'application/json'
-
-    try:
-        vault = Vault.objects.get(pk=vaultid)
-    except:
-        return HttpResponse('{"status": "fail", "error":"Could not find the requested vault"}', mimetype=mime)
-
-    try:
-        new_owner = User.objects.get(username=username )
-    except:
-        return HttpResponse('{"status": "fail", "error":"Cannot find that user"}', mimetype=mime)
-
-    if not vault.user == request.user:
-        return HttpResponse('{"status": "fail", "error":"You cannot transfer ownership of this vault"}', mimetype=mime)
-
-    # Add the new owner as owner and as a member, the old owner will now just become
-    # a member instead
-    vault.members.add(new_owner)
-    vault.user = new_owner
-    vault.save()
-
-    # Does not require the vault to be saved again
-    vault.update_access_rights()
-    return HttpResponse('{"status": "ok"}', mimetype=mime)
-
-
-
-@login_required
-def view_vault(request, username=None):
-    """
-    View the details of the vault for the specific user.
-    If they have no vault then nothing special happens.
-    If they have just upgraded (check with a session variable), then
-    they are thanked.
-    """
-
-    context = {}
-
-    context['vaults'] = request.user.vaults
-    context['vault_membership']  = request.user.vault_membership.exclude(user__id=request.user.id)
-    context['vault_membership_count'] = context['vault_membership'].count()
-    context["api_base"] = "%s/api/1.0/" % settings.API_URL
-
-    context['current_plan'] = request.user.get_profile().plan
-    context['vaults_remaining_in_plan'] = max(0, maximum_vaults[context['current_plan']] - context['vaults'].count())
-    context['can_add_vault_members'] = ( context['current_plan'] in ('business','corporate',) )
-
-    context['has_upgraded'] = False
-    if request.session.get('recently_upgraded'):
-        context['has_upgraded'] = True
-        del request.session['recently_upgraded']
-
-    return render_to_response('frontend/vault/view.html', context,
-                               context_instance=RequestContext(request))
-
-
-@login_required
-def vault_scrapers_remove(request, vaultid, shortname, newstatus):
-    """
-    Removes the scraper identified by shortname from the vault
-    identified by vaultid.  This can currently only be done by
-    the vault owner, and only if the scraper is actually in the
-    vault.
-
-    Will set the vault property of the scraper to None but does
-    not touch the editorship/ownership which must be done elsewhere.
-    """
-#    if not request.is_ajax():
-#        return HttpResponseForbidden('This page cannot be called directly')
-
-    code = get_object_or_404( Code, short_name=shortname )
-    vault   = get_object_or_404( Vault, pk=vaultid )
-    mime = 'application/json'
-
-    # Must own the vault
-    if vault.user != request.user:
-        return HttpResponse('{"status": "fail", "error":"You do not own this vault"}', mimetype=mime)
-
-    if code.vault != vault:
-        return HttpResponse('{"status": "fail", "error":"This item is not in this vault"}', mimetype=mime)
-
-
-    code.privacy_status = newstatus
-    code.vault = None
-    code.save()
-
-    return HttpResponse('{"status": "ok"}', mimetype=mime)
-
-
-
-@login_required
-def vault_scrapers_add(request, vaultid, shortname):
-    """
-    Adds a scraper identified by shortname to the vault (vaultid).
-
-    The current user must be the current owner of the script and they
-    must also be a member of the vault they are trying to add the
-    scraper to.
-
-    During the transition, where the scraper's vault property is set
-    the original owner is demoted to an editor, and the vault owner
-    is set as owner (or promoted if they were an editor previously).
-    """
-#    if not request.is_ajax():
-#        return HttpResponseForbidden('This page cannot be called directly')
-
-    code = get_object_or_404( Code, short_name=shortname )
-    vault   = get_object_or_404( Vault, pk=vaultid )
-    mime = 'application/json'
-
-    if not code.owner() == request.user:
-        # Only the scraper owner can add it to a vault
-        return HttpResponse('{"status": "fail", "error":"You cannot move this item to your own vault"}', mimetype=mime)
-
-    # Must be a member of the vault
-    if not request.user in vault.members.all():
-        return HttpResponse('{"status": "fail", "error":"You are not a member of this vault"}', mimetype=mime)
-
-    # Old owner is now editor and the new owner should be the vault owner.
-    code.privacy_status = 'private'
-    code.vault = vault
-    code.generate_apikey()
-    code.save()
-
-    vault.update_access_rights()
-
-    return HttpResponse('{"status": "ok" }', mimetype=mime)
-
-
-@login_required
-def vault_users(request, vaultid, username, action):
-    """
-    View which allows a user to add/remove users from their vault. Will
-    only work on the current user's vault so if they don't have one then
-    it won't work.
-
-    *username* (used for 'adduser' etc) can be a username or an
-    email address.
-    """
-    from codewiki.models import Vault
-    mime = 'application/json'
-    result = {"status": "ok", "error":""}
-
-    vault = get_object_or_404( Vault, id=vaultid)
-    if vault.user.id != request.user.id:
-        return HttpResponse('{"status": "fail", "error": "Not your vault"}', mimetype=mime)
-
-    # Validate an 'adduser' command.
-    if action == 'adduser':
-        current_plan = request.user.get_profile().plan
-        if current_plan not in ('business','corporate',):
-            return HttpResponse('''{"status": "fail", "error":"You can't add users to this vault. Please upgrade your ScraperWiki account."}''', mimetype=mime)
-    if action == 'adduser' and '@' in username:
-        if User.objects.filter(email=username):
-            # They're already a ScraperWiki user.
-            username = User.objects.get(email=username).username
-            # Fall all the way out of the two nested 'if's
-        else:
-            result = invite_to_vault(vault_owner=vault.user, email=username, vault=vault)
-            return HttpResponse(json.dumps(result), mimetype=mime)
-
-    try:
-        user = User.objects.get(username=username)
-    except User.DoesNotExist:
-        return HttpResponse('{"status": "fail", "error":"Username not found"}',
-          mimetype=mime)
-
-
-    editor = request.user == vault.user
-
-    if action == 'adduser':
-        if not user in vault.members.all():
-            result['fragment'] = render_to_string( 'frontend/includes/vault_member.html',
-              { 'm': user, 'vault': vault, 'editor': editor })
-            vault.members.add(user)
-            vault.add_user_rights(user)
-        else:
-            result['status'] = 'fail'
-            result['error']  = 'User is already a member of this vault'
-
-    if action =='removeuser':
-        if user in vault.members.all():
-            vault.members.remove(user)
-            vault.remove_user_rights(user)
-        else:
-            result['status'] = 'fail'
-            result['error']  = 'User not in this vault'
-
-    vault.save()
-
-    return HttpResponse( json.dumps(result), mimetype=mime)
-
-def invite_to_vault(vault_owner, email, vault):
-    """Send an e-mail to address *mail* inviting them to *vault*.
-    Returns a dict to use as the JSON result.
-    """
-
-    # May get overwritten if there is an error.
-    result = { 'status' : 'invited',
-      'message' : "Invitation sent!" }
-
-    # Truncated to avoid annoying Django/e-mail/Quoted-Printable madness.
-    token = str(uuid.uuid4().hex)[:20]
-    context = locals()
-    context['tokenurl'] = "https://%s%s?t=%s" % (Site.objects.get_current().domain, reverse("login"), token)
-
-    text_content = render_to_string('emails/vault_invite.txt', context)
-    html_content = render_to_string('emails/vault_invite.html', context)
-    subject ='You have been invited to a ScraperWiki vault: %s' % vault.name
-
-    msg = EmailMultiAlternatives(subject, text_content, vault_owner.email,
-      to=[email], bcc=[vault_owner.email])
-    msg.attach_alternative(html_content, "text/html")
-    try:
-        msg.send(fail_silently=False)
-    except EnvironmentError as e:
-        result = { 'status' : 'fail',
-          'error' : "Couldn't send email" }
-
-    invite = Invite(token=context['token'], email=email, vault=vault)
-    invite.save()
-    return result
 

@@ -1,5 +1,5 @@
 from frontend.models import *
-from codewiki.models import Vault, UserCodeRole
+from codewiki.models import UserCodeRole
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 
@@ -15,10 +15,6 @@ class UserProfileStack(admin.StackedInline):
     max_num = 1
     extra = 0
 
-class VaultInlines(admin.StackedInline):
-    model = Vault
-    extra = 0
- 
 class UserProfileInlines(admin.StackedInline):
     model = UserProfile
     extra = 0
@@ -45,17 +41,17 @@ class DataEnquiryAdmin(admin.ModelAdmin):
 
 class FeaturesAdmin(admin.ModelAdmin):
     list_display = ('name', 'short_description', 'public')
-    
+
     def short_description(self, obj):
         if len(obj.description) > 50:
             return obj.description[:50] + '...'
         return obj.description
-    
+
     class Meta:
         model = Feature
 
 class CustomUserAdmin(UserAdmin):
-    list_display = ('username', 'profile_name', 'email', 'scrapers', 'vaults', 'is_active', 'is_staff','is_beta_user','date_joined', 'last_login',)
+    list_display = ('username', 'profile_name', 'email', 'scrapers', 'is_active', 'is_staff','is_beta_user','date_joined', 'last_login',)
     list_filter = ('is_active', 'is_staff', 'is_superuser',)
     ordering = ('-date_joined',)
     search_fields  = ('username','email',)
@@ -68,15 +64,12 @@ class CustomUserAdmin(UserAdmin):
             return 'no'
 
     def scrapers(self, obj):
-        return UserCodeRole.objects.filter(user=obj, role='owner').count()    
+        return UserCodeRole.objects.filter(user=obj, role='owner').count()
 
-    def vaults(self, obj):
-        return obj.vaults.count()
-        
     def profile_name(self, obj):
         return obj.get_profile().name
 
-    inlines = [UserProfileStack, VaultInlines]
+    inlines = [UserProfileStack]
 
 
 admin.site.register(Feature, FeaturesAdmin)

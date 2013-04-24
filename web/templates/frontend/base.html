@@ -137,9 +137,6 @@
         <div class="subnav user">
             <ul>
                 <li class="profile"><a href="{% url profile user.username %}">Your Scrapers</a></li>
-                {% if user.vaults.count > 0 or request.user.vault_membership.count %}
-                <li class="vaults"><a href="{% url vault %}">Your Vaults</a></li>
-                {% endif %}
                 <li class="feedback"><a href="{% url contact_form %}">Give Feedback</a></li>
                 <li class="logout"><a href="{% url logout %}?next_page=/">Log Out</a></li>
             </ul>
