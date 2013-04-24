@@ -14,7 +14,7 @@
 
 <div class="content">
     <input type="hidden" id="id_api_base" value="{{api_base}}" />
-    
+
     {% if has_upgraded %}
     <div id="welcome_to_premium">
         <h3>Thanks for upgrading your account!</h3>
@@ -26,10 +26,9 @@
 
 {% if vaults.count %}
 <div id="my_vaults">
-    <h2>You own {{ vaults.count }} vault{{ vaults.count|pluralize }}: {% if vaults_remaining_in_plan %}<a id="new_vault" href="/vaults/new/">Create a new vault</a>{% else %}<a id="upgrade_plan" href="/pricing/">Upgrade to create more vaults</a>{% endif %}</h2>
     {% for vault in vaults.all %}
     <div class="vault" id="vault_{{vault.id}}">
-        
+
     	<div class="vault_header">
     	    <span class="shineyshiney"></span>
 	        <!-- <a class="vault_delete"><img src="{{ MEDIA_URL }}images/icons/delete.png" width="16" height="16"> Delete vault</a> -->
@@ -47,14 +46,12 @@
                 <a class="add_user" rel="{{ vault.id }}"><img src="{{ MEDIA_URL }}images/icons/add.png" width="16" height="16"> Add another user</a>
                 <p class="new_user"><label for="username_{{vault.id}}">Username:</label> <input type="text" id="username_{{vault.id}}" class="username text" /> <a rel="{{vault.id}}">Add!</a></p>
                 <p class="user_error"></p>
-                {% else %}
-                <a class="upgrade_to_add_user" href="/pricing/"><img src="{{ MEDIA_URL }}images/icons/add.png" width="16" height="16"> Upgrade to add more users</a>
                 {% endif %}
                 <span class="arrow"></span>
             {% endifequal %}
             </div>
         </div>
-        
+
         <div class="vault_contents{% if vault.get_code_objects.count == 0 %} empty{% endif %}">
     	{% if vault.get_code_objects.count > 0 %}
     	    <ul class="scraper_list">
@@ -76,7 +73,7 @@
     	    </div>
     	{% endif %}
     	</div>
-        
+
         {% if request.user.is_staff %}
         <div class="vault_footer">
             <p class="transfer_ownership">
@@ -85,9 +82,9 @@
             </p>
         </div>
         {% endif %}
-        
+
     </div>
-    
+
     {% endfor %}
 </div>
 {% else %}
@@ -99,12 +96,12 @@
 {% endif %}
 
 {% if vault_membership_count %}
-<div id="shared_vaults">	
+<div id="shared_vaults">
     <h2>You can access {{ vault_membership_count }} shared vault{{ vault_membership_count|pluralize }}:</h2>
-	
+
 	{% for vault in vault_membership %}
 	<div class="vault" id="vault_{{vault.id}}">
-        
+
     	<div class="vault_header">
     	    <span class="shineyshiney"></span>
 	        <!-- <a class="vault_leave"><img src="{{ MEDIA_URL }}images/icons/door_exit.png" width="16" height="16"> Leave vault</a> -->
@@ -120,7 +117,7 @@
                 <span class="arrow"></span>
             </div>
         </div>
-        
+
         <div class="vault_contents{% if vault.get_code_objects.count == 0 %} empty{% endif %}">
     	{% if vault.get_code_objects.count > 0 %}
     	    <ul class="scraper_list">
@@ -142,7 +139,7 @@
     	    </div>
     	{% endif %}
     	</div>
-        
+
     </div>
 	{% endfor %}
 </div>

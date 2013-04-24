@@ -6,7 +6,6 @@ from django.core.handlers.wsgi import WSGIRequest
 from django.core.handlers.base import BaseHandler
 import django.core.mail
 
-from frontend.views import subscribe
 
 sent_mail_content = {}
 
@@ -26,19 +25,19 @@ django.core.mail.send_mail = mock_sendmail
 class RequestFactory(Client):
     """
     Class that lets you create mock Request objects for use in testing.
-    
+
     Usage:
-    
+
     rf = RequestFactory()
     get_request = rf.get('/hello/')
     post_request = rf.post('/submit/', {'foo': 'bar'})
-    
+
     This class re-uses the django.test.client.Client interface, docs here:
     http://www.djangoproject.com/documentation/testing/#the-test-client
-    
-    Once you have a request object you can pass it to any view function, 
+
+    Once you have a request object you can pass it to any view function,
     just as if that view had been hooked up using a URLconf.
-    
+
     """
     def request(self, **request):
         """

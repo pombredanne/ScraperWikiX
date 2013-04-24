@@ -1,5 +1,7 @@
 *.py[cod]
 
+resourcedir/
+splitscrapers/
 logs/
 uml/uml.cfg
 web/settings.py
