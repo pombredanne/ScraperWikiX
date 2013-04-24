@@ -11,6 +11,11 @@
 #  ./runlocal [--skip datastore,httpproxy,twister,orbited]
 # (not implemented yet)
 
+if [ -z "$SW_HOME" ]; then
+    echo "No SW_HOME is set"
+    exit 1
+fi
+
 [ -f uml.cfg ] || {
     echo "runlocal: uml.cfg not found;"
     echo "runlocal: Script should be run from uml directory."
@@ -38,8 +43,5 @@ echo "Have set NODE_PATH to $NODE_PATH"
 )
 
 ./etc/local.d/dataproxy         start
-./etc/local.d/ftpproxy          start
-./etc/local.d/httpproxy         start
-./etc/local.d/httpsproxy        start
 ./etc/local.d/twister           start
 ./etc/local.d/orbited           start

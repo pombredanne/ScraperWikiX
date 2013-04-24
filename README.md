@@ -7,6 +7,8 @@ This code is a clone of the master branch of the [ScraperWiki repository on bitb
 
 ## Notes to self.
 
+. ./env-up.sh to setup required env vars
+
 When setting up the django db to run on postgres, the migrations might fail at 024.  If they do then the quickest workaround is to remove the code in the forward() method of the migration, replace it with pass and then
 
     psql scraperwiki

@@ -7,8 +7,12 @@ bin/
 lib/
 include/
 docs/
+log/
 man/
 share/
+services/scriptmgr/appsettings.scriptmgr.js
+uml/twister/orbited.cfg
+
 .Python
 
 # C extensions
