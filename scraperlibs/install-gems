@@ -1,0 +1,13 @@
+
+main_name (0.5.2)
+json (1.6.5)
+mechanize (2.1)
+net-http-digest_auth (1.2)
+net-http-persistent (2.4)
+nokogiri (1.5.0)
+ntlm-http (0.1.1)
+rfgraph (0.3)
+unf (0.0.4)
+unf_ext (0.0.4)
+webrobots (0.0.13)
+
