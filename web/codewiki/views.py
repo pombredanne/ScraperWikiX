@@ -588,34 +588,7 @@ def proxycached(request):
     if not cacheid:
         cacheid = request.GET.get('cacheid', None)
 
-    if not cacheid:
-        return HttpResponse(json.dumps({'type':'error', 'content':"No cacheid found"}), mimetype="application/json")
-
-    proxyurl = urljoin(settings.HTTPPROXYURL , "/Page?" + cacheid )
-
-    result = { 'proxyurl':proxyurl, 'cacheid':cacheid }
-
-    try:
-        fin = urllib2.urlopen(proxyurl)
-        result["mimetype"] = fin.headers.type or "text/html"
-        if fin.headers.maintype == 'text' or fin.headers.type == "application/json" or fin.headers.type[-4:] == "+xml":
-            result['content'] = convtounicode(fin.read())
-        else:
-            result['content'] = base64.encodestring(fin.read())
-            result['encoding'] = "base64"
-    except urllib2.URLError, e:
-        result['type'] = 'exception'
-        result['content'] = str(e)
-        raise e
-    except BadStatusLine, sl:
-        result['type'] = 'exception'
-        result['content'] = str(sl)
-    except Exception, exc:
-        result['type'] = 'exception'
-        result['content'] = str(exc)
-        raise exc
-
-    return HttpResponse(json.dumps(result), mimetype="application/json")
+    return HttpResponse(json.dumps({'type':'error', 'content':"No cacheid found"}), mimetype="application/json")
 
 
 # could be replaced with the dataproxy chunking technology now available in there,
@@ -679,42 +652,7 @@ def attachauth(request):
     if not toscraper:
         return HttpResponse("Need a 'to' scraper")
 
-    if toscraper.privacy_status != 'private':
-        # toscraper is public so anyone can read
-        return HttpResponse("Yes")
-
-    if not fromscraper:
-        return HttpResponse("Need a 'from' scraper if not accessing public scraper")
-
     return HttpResponse("Yes")
-
-
-def webstore_attach_auth(request):
-    mime = 'application/json'
-    scrapername = request.GET.get("scrapername")
-    attachtoname = request.GET.get("attachtoname")
-
-    fromscraper, toscraper = None, None
-    if scrapername:
-        try:
-            fromscraper = models.Code.objects.exclude(privacy_status="deleted").get(short_name=scrapername)
-        except models.Code.DoesNotExist:
-            return HttpResponse("{'attach':'Fail', 'error': 'Scraper does not exist: %s' % str([scrapername])}", mimetype=mime)
-
-    if attachtoname:
-        try:
-            toscraper = models.Code.objects.exclude(privacy_status="deleted").get(short_name=attachtoname)
-        except models.Code.DoesNotExist:
-            return HttpResponse("{'attach':'Fail', 'error': 'Scraper does not exist: %s' % str([attachtoname])}", mimetype=mime)
-
-    if not toscraper or not fromscraper:
-        return HttpResponse("{'attach':'Fail', 'error': 'Need both a source and a target scraper'", mimetype=mime)
-
-    if toscraper.privacy_status != 'private':
-        # toscraper is public so anyone can read
-            return HttpResponse("{'attach':'Ok'}", mimetype=mime)
-
-    return HttpResponse("{'attach':'Ok'}", mimetype=mime)
 
 
 def scraper_data_view(request, wiki_type, short_name, table_name):

@@ -48,8 +48,6 @@ urlpatterns = patterns('',
     url(r'^captcha/', include('captcha.urls')),
     url(r'^attachauth', codewiki.views.attachauth),
 
-    url(r'^webstoreauth', codewiki.views.webstore_attach_auth),
-
     # allows direct viewing of the django tables
     url(r'^admin/', include(admin.site.urls)),
 
@@ -70,9 +68,6 @@ urlpatterns = patterns('',
 
     # Robots.txt
     (r'^robots.txt$', direct_to_template, {'template': 'robots.txt', 'mimetype': 'text/plain'}),
-
-    # Key Performance Indicators
-    (r'^kpi/', include('kpi.urls')),
 
     # pdf cropper technology
     (r'^cropper/', include('cropper.urls')),

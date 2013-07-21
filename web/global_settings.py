@@ -190,7 +190,7 @@ except:
 
 MAX_DATA_POINTS = 500
 
-BLOG_FEED = 'http://blog.scraperwiki.com/feed/atom'
+BLOG_FEED = None
 
 DATA_TABLE_ROWS = 10
 RSS_ITEMS = 50
@@ -204,8 +204,6 @@ CODEMIRROR_URL = "CodeMirror-%s/" % CODEMIRROR_VERSION
 APPROXLENOUTPUTLIMIT = 3000
 
 CONFIGFILE =  "../uml/uml.cfg"
-
-HTTPPROXYURL = "http://localhost:9005"
 DISPATCHERURL = "http://localhost:9000"
 
 PAGINATION_DEFAULT_PAGINATION=20
@@ -261,3 +259,7 @@ LOGGING = {
 INSTALLED_APPS += ['icanhaz']
 ICANHAZ_DIRS = [SCRAPERWIKI_DIR + 'templates/codewiki/js/']
 
+try:
+    from local_settings import *
+except ImportError:
+    pass

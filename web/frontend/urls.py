@@ -26,8 +26,6 @@ urlpatterns = patterns('',
 
     url(r'^login/$',frontend_views.login, name='login'),
     url(r'^login/confirm/$', direct_to_template, {'template': 'registration/confirm_account.html'}, name='confirm_account'),
-    url(r'^terms_and_conditions/$', direct_to_template, {'template': 'frontend/terms_and_conditions.html'}, name='terms'),
-    url(r'^privacy/$', direct_to_template, {'template': 'frontend/privacy.html'}, name='privacy'),
     url(r'^about/$', direct_to_template, {'template': 'frontend/about.html'}, name='about'),
     url(r'^tour/$', redirect_to, {'url': '/about/'}, name='tour'),
     url(r'^example_data/$', direct_to_template, {'template': 'frontend/example_data.html'}, name='api'),
