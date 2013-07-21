@@ -1,6 +1,6 @@
-# ScraperWiki Classic
+# ScraperWikiX 
 
-This code is a clone of the master branch of the [ScraperWiki repository on bitbucket](http://bitbucket.org/ScraperWiki/scraperwiki) which I'm just using to play about with some ideas on distributing code and data to worker processes.  The idea is to build a personal scraperwiki that is easier to install.
+This code is a clone of the master branch of the [ScraperWiki repository on bitbucket](http://bitbucket.org/ScraperWiki/scraperwiki) forked with the intention of cutting it down to make it easier to install as a Personal ScraperWiki. 
 
 
 ## Notes to self.
