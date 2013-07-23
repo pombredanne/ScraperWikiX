@@ -1,3 +1,0 @@
-Use these instructions for installation for developers:
-
-https://bitbucket.org/ScraperWiki/scraperwiki/wiki/LocalDevelopment
