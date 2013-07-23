@@ -3,6 +3,10 @@
 This code is a clone of the master branch of the [ScraperWiki repository on bitbucket](http://bitbucket.org/ScraperWiki/scraperwiki) forked with the intention of cutting it down to make it easier to install as a Personal ScraperWiki. 
 
 
+## Backend deps
+
+Relies on rossjones/swx-datastore (replaces the version removed from here)
+
 ## Notes to self.
 
 . ./env-up.sh to setup required env vars
